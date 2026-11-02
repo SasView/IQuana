@@ -57,7 +57,7 @@ factor, the LMFit engine, or polydispersity can give different results from
   Linux, Windows and macOS for release pull requests, every Sunday, and on
   demand. ([#14](https://github.com/ai4se1dk/IQuana/pull/14))
 - `simulated_sans_data.csv` and `simulated_sans_data_with_resolution.csv` in
-  the repository root, used by the notebooks and examples.
+  `tests/data`, used by the notebooks and examples.
 
 ### Changed
 
