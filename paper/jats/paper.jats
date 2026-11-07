@@ -1,0 +1,592 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE article PUBLIC "-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.2 20190208//EN"
+                  "JATS-publishing1.dtd">
+<article xmlns:mml="http://www.w3.org/1998/Math/MathML" xmlns:xlink="http://www.w3.org/1999/xlink" dtd-version="1.2" article-type="other">
+<front>
+<journal-meta>
+<journal-id></journal-id>
+<journal-title-group>
+<journal-title>Journal of Open Source Software</journal-title>
+<abbrev-journal-title>JOSS</abbrev-journal-title>
+</journal-title-group>
+<issn publication-format="electronic">2475-9066</issn>
+<publisher>
+<publisher-name>Open Journals</publisher-name>
+</publisher>
+</journal-meta>
+<article-meta>
+<article-id pub-id-type="publisher-id">0</article-id>
+<article-id pub-id-type="doi">N/A</article-id>
+<title-group>
+<article-title>IQuana: Intuitive small-angle scattering data
+analysis</article-title>
+</title-group>
+<contrib-group>
+<contrib contrib-type="author" corresp="yes">
+<contrib-id contrib-id-type="orcid">https://orcid.org/0000-0002-5612-9343</contrib-id>
+<name>
+<surname>Hammond</surname>
+<given-names>Oliver S.</given-names>
+</name>
+<xref ref-type="aff" rid="aff-1"/>
+<xref ref-type="aff" rid="aff-2"/>
+<xref ref-type="aff" rid="aff-3"/>
+<xref ref-type="corresp" rid="cor-1"><sup>*</sup></xref>
+</contrib>
+<contrib contrib-type="author">
+<contrib-id contrib-id-type="orcid">https://orcid.org/0000-0002-2359-1013</contrib-id>
+<name>
+<surname>Rozyczko</surname>
+<given-names>Piotr</given-names>
+</name>
+<xref ref-type="aff" rid="aff-1"/>
+</contrib>
+<contrib contrib-type="author">
+<contrib-id contrib-id-type="orcid">https://orcid.org/0000-0002-6227-8062</contrib-id>
+<name>
+<surname>Rod</surname>
+<given-names>Thomas Holm</given-names>
+</name>
+<xref ref-type="aff" rid="aff-1"/>
+</contrib>
+<aff id="aff-1">
+<institution-wrap>
+<institution>European Spallation Source, Data Management &amp;
+Scientific Computing, Asmussens Allé 305, Kongens Lyngby 2800,
+Hovedstaden, Denmark</institution>
+</institution-wrap>
+</aff>
+<aff id="aff-2">
+<institution-wrap>
+<institution>Division of Surface and Corrosion Science, KTH Royal
+Institute of Technology, Brinellvägen 8, Stockholm 10044, Stockholms
+län, Sweden</institution>
+</institution-wrap>
+</aff>
+<aff id="aff-3">
+<institution-wrap>
+<institution>School of Chemistry, University of New South Wales,
+Kensington, Sydney 2033, NSW, Australia</institution>
+</institution-wrap>
+</aff>
+</contrib-group>
+<author-notes>
+<corresp id="cor-1">* E-mail: <email></email></corresp>
+</author-notes>
+<pub-date date-type="pub" publication-format="electronic" iso-8601-date="2026-10-26">
+<day>26</day>
+<month>10</month>
+<year>2026</year>
+</pub-date>
+<volume>¿VOL?</volume>
+<issue>¿ISSUE?</issue>
+<fpage>¿PAGE?</fpage>
+<permissions>
+<copyright-statement>Authors of papers retain copyright and release the
+work under a Creative Commons Attribution 4.0 International License (CC
+BY 4.0)</copyright-statement>
+<copyright-year>1970</copyright-year>
+<copyright-holder>The article authors</copyright-holder>
+<license license-type="open-access" xlink:href="https://creativecommons.org/licenses/by/4.0/">
+<license-p>Authors of papers retain copyright and release the work under
+a Creative Commons Attribution 4.0 International License (CC BY
+4.0)</license-p>
+</license>
+</permissions>
+<kwd-group kwd-group-type="author">
+<kwd>Python</kwd>
+<kwd>small-angle scattering</kwd>
+<kwd>SANS</kwd>
+<kwd>SAXS</kwd>
+</kwd-group>
+</article-meta>
+</front>
+<body>
+<sec id="summary">
+  <title>Summary</title>
+  <p>Small-angle scattering is a powerful inverse structure
+  determination technique, using neutrons (SANS) and X-rays (SAXS) to
+  resolve nanoscale objects in their native
+  environment(<xref alt="Gommes et al., 2021" rid="ref-Gommes2021beginners" ref-type="bibr">Gommes
+  et al., 2021</xref>). <monospace>IQuana</monospace>
+  (<inline-formula><alternatives>
+  <tex-math><![CDATA[I(Q)]]></tex-math>
+  <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mi>I</mml:mi><mml:mo stretchy="false" form="prefix">(</mml:mo><mml:mi>Q</mml:mi><mml:mo stretchy="false" form="postfix">)</mml:mo></mml:mrow></mml:math></alternatives></inline-formula>
+  analysis; /ɪˈɡwɑː.nə/) provides a flexible and model-agnostic Python
+  framework for the fitting of analytical particle shape and interaction
+  models to this reciprocal space scattering data. This reproducible and
+  scriptable approach functions primarily in Jupyter notebooks, as an
+  accessible interaction pathway for the
+  <monospace>sasmodels</monospace>(<xref alt="Shrestha &amp; others, 2026b" rid="ref-Shrestha2026sasmodels" ref-type="bibr">Shrestha
+  &amp; others, 2026b</xref>) backend library of
+  <monospace>SasView</monospace>.</p>
+</sec>
+<sec id="statement-of-need">
+  <title>Statement of need</title>
+  <p>Over the past few decades, small-angle scattering analysis has
+  evolved from pioneering early CLI software packages such as
+  <monospace>FISH</monospace>, into predominantly GUI-centric efforts,
+  with prominent examples including <monospace>SasView</monospace>,
+  <monospace>SASfit</monospace>, <monospace>Irena</monospace>,
+  <monospace>ATSAS</monospace> and <monospace>McSAS3</monospace>
+  (<xref alt="Breßler et al., 2015" rid="ref-bressler2015sasfit" ref-type="bibr">Breßler
+  et al., 2015</xref>;
+  <xref alt="Franke et al., 2025" rid="ref-Franke2025ATSAS" ref-type="bibr">Franke
+  et al., 2025</xref>;
+  <xref alt="Ilavsky &amp; Jemian, 2009" rid="ref-ilavsky2009irena" ref-type="bibr">Ilavsky
+  &amp; Jemian, 2009</xref>;
+  <xref alt="Pauw &amp; Breßler, 2026" rid="ref-pauw2026mcsas3" ref-type="bibr">Pauw
+  &amp; Breßler, 2026</xref>;
+  <xref alt="Shrestha &amp; others, 2026c" rid="ref-Shrestha2026SasView" ref-type="bibr">Shrestha
+  &amp; others, 2026c</xref>).</p>
+  <p>Such initiatives have been powerful drivers of progress and allow
+  effective exploration of datasets. On the flipside, these packages
+  present their own respective drawbacks, such as challenges in
+  reproducibility and repeatability, automation and ease of scripting.
+  Tools are now in place for users to implement their own preferred
+  analysis workflows, if they are willing to assemble data objects,
+  model kernels, parameterization, resolution functions and calls to the
+  optimizer– in other words, spending resource on reimplementing core
+  functionality which has been accrued across the major packages from
+  years of frontier expertise.</p>
+  <p>We therefore pitch <monospace>IQuana</monospace> at groups
+  including researchers, educators, students, and developers. We
+  envisage these groups to use <monospace>IQuana</monospace> to
+  construct reproducible, version-controlled analysis records to better
+  meet today’s FAIR data
+  demands.(<xref alt="Wilkinson et al., 2016" rid="ref-FAIRdata" ref-type="bibr">Wilkinson
+  et al., 2016</xref>) Didactically, we believe there is power in this
+  tool which encourages the user to understand the chain of scientific
+  decisions being made in the analysis process, exposing features which
+  may be treated as black boxes in fully-fledged GUI software,
+  i.e. <monospace>load_data</monospace> &gt;
+  <monospace>set_model</monospace> &gt; <monospace>set_param</monospace>
+  &gt; <monospace>fit</monospace>.</p>
+</sec>
+<sec id="state-of-the-field">
+  <title>State of the field</title>
+  <p>Arguably the most widely-used open source software package for
+  small-angle scattering data analysis and model fitting is
+  <monospace>SasView</monospace> and its accompanying model library
+  <monospace>sasmodels</monospace>, which provides a large library of
+  form and structure factors via <monospace>sasdata</monospace>. The
+  <monospace>SasView</monospace> ecosystem therefore provides native
+  support for common file formats, polydispersity, and instrument
+  resolution, and a (verbose) API. Comparable toolboxes are provided by
+  <monospace>ATSAS</monospace>,(<xref alt="Franke et al., 2025" rid="ref-Franke2025ATSAS" ref-type="bibr">Franke
+  et al., 2025</xref>) <monospace>SASfit</monospace>
+  (<xref alt="Breßler et al., 2015" rid="ref-bressler2015sasfit" ref-type="bibr">Breßler
+  et al., 2015</xref>),
+  <monospace>Irena</monospace>(<xref alt="Ilavsky &amp; Jemian, 2009" rid="ref-ilavsky2009irena" ref-type="bibr">Ilavsky
+  &amp; Jemian, 2009</xref>), <monospace>McSAS3</monospace>(@
+  <xref alt="Pauw &amp; Breßler, 2026" rid="ref-pauw2026mcsas3" ref-type="bibr">Pauw
+  &amp; Breßler, 2026</xref>), and to some extent the NIST macros for
+  Igor Pro remain in
+  use(<xref alt="Kline, 2006" rid="ref-kline2006" ref-type="bibr">Kline,
+  2006</xref>). It is possible to leverage general-purpose libraries
+  such as <monospace>SciPy</monospace>
+  (<xref alt="Virtanen et al., 2020" rid="ref-virtanen2020scipy" ref-type="bibr">Virtanen
+  et al., 2020</xref>) and <monospace>lmfit</monospace>
+  (<xref alt="Newville et al., 2014" rid="ref-lmfit" ref-type="bibr">Newville
+  et al., 2014</xref>) for these tasks, but key aspects of the
+  underlying scattering physics and file handling must be implemented by
+  the user.</p>
+  <p>Fundamentally, <monospace>IQuana</monospace> adopts a philosophy of
+  not reinventing and reimplementing scattering models, optimizers, file
+  handling and visualization. Instead, we build directly on
+  <monospace>SasView</monospace> componentry for a notebook-first
+  implementation which uses <monospace>sasmodels</monospace> for
+  analytical fitting functions,
+  <monospace>sasdata</monospace>(<xref alt="Shrestha &amp; others, 2026a" rid="ref-Shrestha2026sasdata" ref-type="bibr">Shrestha
+  &amp; others, 2026a</xref>) for handling of small-angle scattering
+  data files in community standard formats such as (NX)canSAS, and
+  <monospace>BUMPS</monospace>, which provides the underlying
+  reproducible optimizer
+  framework.(<xref alt="Kienzle &amp; others, 2026" rid="ref-bumps" ref-type="bibr">Kienzle
+  &amp; others, 2026</xref>)</p>
+</sec>
+<sec id="software-design">
+  <title>Software design</title>
+  <p>We take the primary design consideration that the state of the
+  analysis should be explicit and open to user evaluation: one must be
+  able to inspect plots without altering fit results, and to be warned
+  of potential fitting pitfalls (e.g. a fitted parameter hitting a
+  bound, or data missing resolution information), without software
+  silence. Results are provided as rich display objects generally using
+  Plotly
+  (<xref alt="Plotly Technologies Inc., 2015" rid="ref-plotly" ref-type="bibr">Plotly
+  Technologies Inc., 2015</xref>) and not limited by a fixed GUI
+  implementation, but also given as simple plain Python data, allowing
+  easy onward machine readability.</p>
+  <p>The <monospace>IQuana</monospace> class acts as a facade for
+  underlying functionality. Data (such as CSV, canSAS XML, NXcanSAS HDF5
+  including multiple-dataset files) are loaded via
+  <monospace>sasdata</monospace>, which brings basic resolution function
+  handling and weighting of residuals; <monospace>IQuana</monospace> has
+  an independent implementation of common dataset arithmetic operations
+  (subtraction, multiplication, etc). A parameter manager then handles
+  the fitting parameters in a manner consistent wth the loaded
+  <monospace>sasmodels</monospace> kernel. Fitting engine access is
+  provided using the same framework for <monospace>BUMPS</monospace> and
+  <monospace>SciPy</monospace>, which therefore return directly
+  comparable results. A <monospace>FitReport</monospace> is generated,
+  which can be rendered as a notebook table, alongside a
+  <monospace>Plotly</monospace> figure showing data, fits, and
+  residuals.</p>
+  <p>There are a number of useful features conferred by the
+  <monospace>IQuana</monospace> design approach, many of which are
+  increasingly pertinent to modern small-angle scattering analysis
+  problems. For example, after loading their data and subtracting a
+  background, a user might take advantage of the
+  <monospace>pr_inversion</monospace> functionality to obtain Indirect
+  Fourier Transforms (IFT) of their data, and then model their
+  experimental <inline-formula><alternatives>
+  <tex-math><![CDATA[I(Q)]]></tex-math>
+  <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mi>I</mml:mi><mml:mo stretchy="false" form="prefix">(</mml:mo><mml:mi>Q</mml:mi><mml:mo stretchy="false" form="postfix">)</mml:mo></mml:mrow></mml:math></alternatives></inline-formula>
+  with combined <inline-formula><alternatives>
+  <tex-math><![CDATA[P(Q) * S(Q)]]></tex-math>
+  <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mi>P</mml:mi><mml:mo stretchy="false" form="prefix">(</mml:mo><mml:mi>Q</mml:mi><mml:mo stretchy="false" form="postfix">)</mml:mo><mml:mo>*</mml:mo><mml:mi>S</mml:mi><mml:mo stretchy="false" form="prefix">(</mml:mo><mml:mi>Q</mml:mi><mml:mo stretchy="false" form="postfix">)</mml:mo></mml:mrow></mml:math></alternatives></inline-formula>,
+  or apply multiple <inline-formula><alternatives>
+  <tex-math><![CDATA[P(Q)]]></tex-math>
+  <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mi>P</mml:mi><mml:mo stretchy="false" form="prefix">(</mml:mo><mml:mi>Q</mml:mi><mml:mo stretchy="false" form="postfix">)</mml:mo></mml:mrow></mml:math></alternatives></inline-formula>
+  concomitantly. One of the most important features offered by
+  <monospace>IQuana</monospace> is the opportunity to trivially perform
+  simultaneous constrained fits, for example across a contrast series
+  using <monospace>MultiFitter</monospace>; we expose simple
+  functionality for parameters to be independent, fixed, linked, or
+  shared between several datasets in a series. Typical polydispersity
+  functions (Gaussian lognormal, Schulz, rectangular or Boltzmann) can
+  be introduced via <monospace>set_pd_param()</monospace> and fitted
+  alongside other parameters. <monospace>set_q_range()</monospace>
+  allows a user to restrict their fitting window, for example to avoid
+  biasing a fit result for data containing high-Q Bragg peaks and a
+  simple form factor at low-Q. The residual weighting can be adjusted
+  using <monospace>set_weighting</monospace> to follow
+  <inline-formula><alternatives>
+  <tex-math><![CDATA[\mathrm{d}I]]></tex-math>
+  <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mi mathvariant="normal">d</mml:mi><mml:mi>I</mml:mi></mml:mrow></mml:math></alternatives></inline-formula>
+  (default), <inline-formula><alternatives>
+  <tex-math><![CDATA[\sqrt{|I|}]]></tex-math>
+  <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msqrt><mml:mrow><mml:mo stretchy="false" form="prefix">|</mml:mo><mml:mi>I</mml:mi><mml:mo stretchy="false" form="prefix">|</mml:mo></mml:mrow></mml:msqrt></mml:math></alternatives></inline-formula>,
+  <inline-formula><alternatives>
+  <tex-math><![CDATA[|I|]]></tex-math>
+  <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mo stretchy="false" form="prefix">|</mml:mo><mml:mi>I</mml:mi><mml:mo stretchy="false" form="prefix">|</mml:mo></mml:mrow></mml:math></alternatives></inline-formula>
+  or unit weights. Moreover, <monospace>IQuana</monospace> supports
+  custom plugin models and not just the built-in library. All of the
+  above can be approached with further statistical rigour via
+  <monospace>fit_bayesian()</monospace>, which implements the
+  <monospace>DREAM</monospace>
+  sampler(<xref alt="Vrugt et al., 2009" rid="ref-Vrugt2009DREAM" ref-type="bibr">Vrugt
+  et al., 2009</xref>) for a MCMC approach. We envisage that a user
+  could either directly upload their fitting notebook or an exported
+  JSON from <monospace>save_analysis()</monospace> as part of a
+  publication, facilitating FAIR reproduction and allowing a reader to
+  more nimbly follow their fitting workflow. The full
+  <monospace>IQuana</monospace> feature set is comprehensively described
+  in the documentation, which includes a complete user guide, example
+  data, as well as full walkthroughs both for basic functions and
+  advanced features such as simultaneous constrained fitting and using
+  custom models.</p>
+  <fig>
+    <caption><p>As found in the <monospace>IQuana</monospace> documented
+    notebook examples, fits and residuals from using
+    <monospace>IQuana</monospace> upon synthetic SANS test data; (a) a
+    spherical form factor multiplied by a hard-sphere structure factor;
+    (b) a fit of four convoluted form factors; (c) a posterior pair
+    (corner) plot from a <monospace>DREAM</monospace> algorithm call to
+    <monospace>fit_bayesian</monospace> for a spherical form
+    factor.</p></caption>
+    <graphic mimetype="image" mime-subtype="png" xlink:href="iquana-image.png" />
+  </fig>
+</sec>
+<sec id="research-impact-statement">
+  <title>Research impact statement</title>
+  <p><monospace>IQuana</monospace> began life as a pilot project,
+  <monospace>sans-fitter</monospace> (released January 2026), and has
+  since evolved into a much more full-fledged repository. The intended
+  audience is research staff for primary scientific research with
+  wide-reaching potential impact. Beyond this, we see
+  <monospace>IQuana</monospace> as an pedagogical tool, which has
+  already been used effectively in summer schools and undergraduate
+  teaching curricula, for conveying challenging concepts around the
+  analysis of small-angle scattering data.</p>
+</sec>
+<sec id="ai-usage-disclosure">
+  <title>AI usage disclosure</title>
+  <p>Human authors made all core design decisions, and reviewed, edited,
+  and validated all AI-assisted outputs used in the development of this
+  software. Tools used include:</p>
+  <p>Anthropic Claude Fable 5.1: help with architectural design;
+  Anthropic Claude Opus 5.5: help with refactoring and unit test
+  coverage; Anthropic Claude Sonnet 5.5: help with documentation
+  proofing; Codacy https://app.codacy.com : help with testing coverage
+  metrics; CodeRabbit AI: https://www.coderabbit.ai : help with code and
+  documentation review.</p>
+</sec>
+<sec id="acknowledgements">
+  <title>Acknowledgements</title>
+  <p>We acknowledge the developers of <monospace>SasView</monospace>,
+  <monospace>sasmodels</monospace>, <monospace>sasdata</monospace> and
+  <monospace>BUMPS</monospace>, on whose work
+  <monospace>IQuana</monospace> is built.</p>
+</sec>
+</body>
+<back>
+<ref-list>
+  <title></title>
+  <ref id="ref-Gommes2021beginners">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Gommes</surname><given-names>Cedric J.</given-names></name>
+        <name><surname>Jaksch</surname><given-names>Sebastian</given-names></name>
+        <name><surname>Frielinghaus</surname><given-names>Henrich</given-names></name>
+      </person-group>
+      <article-title>Small-angle scattering for beginners</article-title>
+      <source>Journal of Applied Crystallography</source>
+      <year iso-8601-date="2021">2021</year>
+      <volume>54</volume>
+      <issue>6</issue>
+      <pub-id pub-id-type="doi">10.1107/S1600576721010293</pub-id>
+      <fpage>1832</fpage>
+      <lpage>1843</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-Shrestha2026SasView">
+    <element-citation>
+      <person-group person-group-type="author">
+        <name><surname>Shrestha</surname><given-names>S.</given-names></name>
+        <name><surname>others</surname></name>
+      </person-group>
+      <article-title>SasView version 6.2.0</article-title>
+      <publisher-name>Zenodo</publisher-name>
+      <year iso-8601-date="2026">2026</year>
+      <pub-id pub-id-type="doi">10.5281/zenodo.20270235</pub-id>
+    </element-citation>
+  </ref>
+  <ref id="ref-Shrestha2026sasmodels">
+    <element-citation>
+      <person-group person-group-type="author">
+        <name><surname>Shrestha</surname><given-names>S.</given-names></name>
+        <name><surname>others</surname></name>
+      </person-group>
+      <article-title>Sasmodels version 1.1.0</article-title>
+      <publisher-name>Zenodo</publisher-name>
+      <year iso-8601-date="2026">2026</year>
+      <pub-id pub-id-type="doi">10.5281/zenodo.20270238</pub-id>
+    </element-citation>
+  </ref>
+  <ref id="ref-Shrestha2026sasdata">
+    <element-citation>
+      <person-group person-group-type="author">
+        <name><surname>Shrestha</surname><given-names>S.</given-names></name>
+        <name><surname>others</surname></name>
+      </person-group>
+      <article-title>Sasdata version 0.12.2</article-title>
+      <publisher-name>Zenodo</publisher-name>
+      <year iso-8601-date="2026">2026</year>
+      <pub-id pub-id-type="doi">10.5281/zenodo.20270248</pub-id>
+    </element-citation>
+  </ref>
+  <ref id="ref-Franke2025ATSAS">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Franke</surname><given-names>Daniel</given-names></name>
+        <name><surname>Gräwert</surname><given-names>Tobias</given-names></name>
+        <name><surname>Svergun</surname><given-names>Dmitri I.</given-names></name>
+      </person-group>
+      <article-title>New features in ATSAS-4, a program suite for small-angle scattering data analysis</article-title>
+      <source>Journal of Applied Crystallography</source>
+      <year iso-8601-date="2025">2025</year>
+      <volume>58</volume>
+      <issue>3</issue>
+      <pub-id pub-id-type="doi">10.1107/S1600576725002481</pub-id>
+      <fpage>1027</fpage>
+      <lpage>1033</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-bressler2015sasfit">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Breßler</surname><given-names>Ingo</given-names></name>
+        <name><surname>Kohlbrecher</surname><given-names>Joachim</given-names></name>
+        <name><surname>Thünemann</surname><given-names>Andreas F.</given-names></name>
+      </person-group>
+      <article-title>SASfit: A tool for small-angle scattering data analysis using a library of analytical expressions</article-title>
+      <source>Journal of Applied Crystallography</source>
+      <year iso-8601-date="2015">2015</year>
+      <volume>48</volume>
+      <pub-id pub-id-type="doi">10.1107/S1600576715016544</pub-id>
+      <fpage>1587</fpage>
+      <lpage>1598</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-ilavsky2009irena">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Ilavsky</surname><given-names>Jan</given-names></name>
+        <name><surname>Jemian</surname><given-names>Peter R.</given-names></name>
+      </person-group>
+      <article-title>Irena: Tool suite for modeling and analysis of small-angle scattering</article-title>
+      <source>Journal of Applied Crystallography</source>
+      <year iso-8601-date="2009">2009</year>
+      <volume>42</volume>
+      <pub-id pub-id-type="doi">10.1107/S0021889809002222</pub-id>
+      <fpage>347</fpage>
+      <lpage>353</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-kline2006">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Kline</surname><given-names>Steven R.</given-names></name>
+      </person-group>
+      <article-title>Reduction and analysis of SANS and USANS data using IGOR Pro</article-title>
+      <source>Journal of Applied Crystallography</source>
+      <year iso-8601-date="2006">2006</year>
+      <volume>39</volume>
+      <pub-id pub-id-type="doi">10.1107/S0021889806035059</pub-id>
+      <fpage>895</fpage>
+      <lpage>900</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-FAIRdata">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Wilkinson</surname><given-names>Mark D.</given-names></name>
+        <name><surname>Dumontier</surname><given-names>Michel</given-names></name>
+        <name><surname>Aalbersberg</surname><given-names>IJsbrand Jan</given-names></name>
+        <name><surname>Appleton</surname><given-names>Gabrielle</given-names></name>
+        <name><surname>Axton</surname><given-names>Myles</given-names></name>
+        <name><surname>Baak</surname><given-names>Arie</given-names></name>
+        <name><surname>others</surname></name>
+      </person-group>
+      <article-title>The FAIR guiding principles for scientific data management and stewardship</article-title>
+      <source>Scientific Data</source>
+      <year iso-8601-date="2016">2016</year>
+      <volume>3</volume>
+      <pub-id pub-id-type="doi">10.1038/sdata.2016.18</pub-id>
+      <fpage>160018</fpage>
+      <lpage></lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-virtanen2020scipy">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Virtanen</surname><given-names>Pauli</given-names></name>
+        <name><surname>Gommers</surname><given-names>Ralf</given-names></name>
+        <name><surname>Oliphant</surname><given-names>Travis E.</given-names></name>
+        <name><surname>Haberland</surname><given-names>Matt</given-names></name>
+        <name><surname>Reddy</surname><given-names>Tyler</given-names></name>
+        <name><surname>Cournapeau</surname><given-names>David</given-names></name>
+        <name><surname>Burovski</surname><given-names>Evgeni</given-names></name>
+        <name><surname>Peterson</surname><given-names>Pearu</given-names></name>
+        <name><surname>Weckesser</surname><given-names>Warren</given-names></name>
+        <name><surname>Bright</surname><given-names>Jonathan</given-names></name>
+        <name><surname>Walt</surname><given-names>Stéfan J. van der</given-names></name>
+        <name><surname>Brett</surname><given-names>Matthew</given-names></name>
+        <name><surname>Wilson</surname><given-names>Joshua</given-names></name>
+        <name><surname>Millman</surname><given-names>K. Jarrod</given-names></name>
+        <name><surname>Mayorov</surname><given-names>Nikolay</given-names></name>
+        <name><surname>Nelson</surname><given-names>Andrew R. J.</given-names></name>
+        <name><surname>Jones</surname><given-names>Eric</given-names></name>
+        <name><surname>Kern</surname><given-names>Robert</given-names></name>
+        <name><surname>Larson</surname><given-names>Eric</given-names></name>
+        <name><surname>Carey</surname><given-names>C. J.</given-names></name>
+        <name><surname>Polat</surname><given-names>İlhan</given-names></name>
+        <name><surname>Feng</surname><given-names>Yu</given-names></name>
+        <name><surname>Moore</surname><given-names>Eric W.</given-names></name>
+        <name><surname>VanderPlas</surname><given-names>Jake</given-names></name>
+        <name><surname>Laxalde</surname><given-names>Denis</given-names></name>
+        <name><surname>Perktold</surname><given-names>Josef</given-names></name>
+        <name><surname>Cimrman</surname><given-names>Robert</given-names></name>
+        <name><surname>Henriksen</surname><given-names>Ian</given-names></name>
+        <name><surname>Quintero</surname><given-names>E. A.</given-names></name>
+        <name><surname>Harris</surname><given-names>Charles R.</given-names></name>
+        <name><surname>Archibald</surname><given-names>Anne M.</given-names></name>
+        <name><surname>Ribeiro</surname><given-names>Antônio H.</given-names></name>
+        <name><surname>Pedregosa</surname><given-names>Fabian</given-names></name>
+        <name><surname>Mulbregt</surname><given-names>Paul van</given-names></name>
+        <string-name>SciPy 1.0 Contributors</string-name>
+      </person-group>
+      <article-title>SciPy 1.0: Fundamental algorithms for scientific computing in Python</article-title>
+      <source>Nature Methods</source>
+      <year iso-8601-date="2020">2020</year>
+      <volume>17</volume>
+      <pub-id pub-id-type="doi">10.1038/s41592-019-0686-2</pub-id>
+      <fpage>261</fpage>
+      <lpage>272</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-lmfit">
+    <element-citation>
+      <person-group person-group-type="author">
+        <name><surname>Newville</surname><given-names>Matthew</given-names></name>
+        <name><surname>Stensitzki</surname><given-names>Till</given-names></name>
+        <name><surname>Allen</surname><given-names>Daniel B.</given-names></name>
+        <name><surname>Ingargiola</surname><given-names>Antonino</given-names></name>
+      </person-group>
+      <article-title>LMFIT: Non-linear least-square minimization and curve-fitting for Python</article-title>
+      <publisher-name>Zenodo</publisher-name>
+      <year iso-8601-date="2014">2014</year>
+      <pub-id pub-id-type="doi">10.5281/zenodo.11813</pub-id>
+    </element-citation>
+  </ref>
+  <ref id="ref-bumps">
+    <element-citation>
+      <person-group person-group-type="author">
+        <name><surname>Kienzle</surname><given-names>Paul A.</given-names></name>
+        <name><surname>others</surname></name>
+      </person-group>
+      <article-title>BUMPS: Data fitting with uncertainty analysis, version 1.0.5</article-title>
+      <publisher-name>Zenodo</publisher-name>
+      <year iso-8601-date="2026">2026</year>
+      <pub-id pub-id-type="doi">10.5281/zenodo.594099</pub-id>
+    </element-citation>
+  </ref>
+  <ref id="ref-plotly">
+    <element-citation>
+      <person-group person-group-type="author">
+        <string-name>Plotly Technologies Inc.</string-name>
+      </person-group>
+      <article-title>Collaborative data science</article-title>
+      <publisher-name>Plotly Technologies Inc.</publisher-name>
+      <publisher-loc>Montreal, QC</publisher-loc>
+      <year iso-8601-date="2015">2015</year>
+      <uri>https://plot.ly</uri>
+    </element-citation>
+  </ref>
+  <ref id="ref-Vrugt2009DREAM">
+    <element-citation publication-type="article-journal">
+      <person-group person-group-type="author">
+        <name><surname>Vrugt</surname><given-names>Jasper A.</given-names></name>
+        <name><surname>Braak</surname><given-names>Cajo J. F. ter</given-names></name>
+        <name><surname>Diks</surname><given-names>Cees G. H.</given-names></name>
+        <name><surname>Robinson</surname><given-names>Bruce A.</given-names></name>
+        <name><surname>Hyman</surname><given-names>James M.</given-names></name>
+        <name><surname>Higdon</surname><given-names>Dave</given-names></name>
+      </person-group>
+      <article-title>Accelerating Markov chain Monte Carlo simulation by differential evolution with self-adaptive randomized subspace sampling</article-title>
+      <source>International Journal of Nonlinear Sciences and Numerical Simulation</source>
+      <year iso-8601-date="2009">2009</year>
+      <volume>10</volume>
+      <issue>3</issue>
+      <pub-id pub-id-type="doi">10.1515/IJNSNS.2009.10.3.273</pub-id>
+      <fpage>273</fpage>
+      <lpage>290</lpage>
+    </element-citation>
+  </ref>
+  <ref id="ref-pauw2026mcsas3">
+    <element-citation>
+      <person-group person-group-type="author">
+        <name><surname>Pauw</surname><given-names>Brian R.</given-names></name>
+        <name><surname>Breßler</surname><given-names>Ingo</given-names></name>
+      </person-group>
+      <article-title>McSAS3: Improved Monte Carlo small-angle scattering analysis software for dilute and dense scatterers</article-title>
+      <year iso-8601-date="2026">2026</year>
+      <uri>https://arxiv.org/abs/2601.18659</uri>
+      <pub-id pub-id-type="doi">10.48550/arXiv.2601.18659</pub-id>
+    </element-citation>
+  </ref>
+</ref-list>
+</back>
+</article>
