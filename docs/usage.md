@@ -374,8 +374,13 @@ fitter = IQuana.load_analysis('difference.json', data=data_ops.subtract(a, b))
 An analysis saved by IQuana 0.5 or earlier (schema version 2) holds no arrays,
 so an in-memory dataset still has to be passed with `data=`.
 
+An analysis of an in-memory dataset contains that dataset: the measured or
+derived intensities are written into the file, so sharing the file shares the
+data.
+
 An analysis saved with `include_result=False` is a template: a configured model
-with no sample-specific outcome, ready to apply to the next dataset.
+with no sample-specific outcome, ready to apply to the next dataset. A template
+never embeds arrays, so loading a template of in-memory data needs `data=`.
 
 !!! note "Custom models"
     By default only models built into sasmodels are loaded. Loading a

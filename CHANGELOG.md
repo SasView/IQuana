@@ -23,12 +23,13 @@ All notable changes to this project are documented in this file.
     `examples/data/`.
 - `save_analysis()` writes the arrays of an in-memory dataset (a `data_ops`
   result, a simulated or computed curve) into the analysis file, so
-  `load_analysis(path)` reopens it without `data=`. The `schema` block also
-  records the SincCity version.
+  `load_analysis(path)` reopens it without `data=`. A template
+  (`include_result=False`) embeds no arrays and still needs `data=`. The
+  `schema` block also records the SincCity version.
 
 ### Changed
 
-- `sinccity` and `periodictable` are required dependencies.
+- `sinccity` is a required dependency.
 - Analysis files are written as schema version 3. Version 1 and 2 files still
   load; an IQuana 0.5 refuses a version 3 file with its "newer schema"
   message.

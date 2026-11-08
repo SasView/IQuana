@@ -56,6 +56,5 @@ IQuana relies on the following libraries:
 - **sasdata**: SANS data loading
 - **bumps**: Bayesian Uncertainty Modeling for Parameter Selection (fitting engine)
 - **sinccity**: the Generic Scattering Calculator, I(q) of a PDB, GRO, SLD or VTK structure
-- **periodictable**: scattering lengths and densities of the elements, for the calculator
 
 These will be automatically installed when you install IQuana.

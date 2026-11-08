@@ -805,6 +805,64 @@ def test_edited_embedded_arrays_drop_the_result(tmp_path):
     assert loaded._fit_contract is None
 
 
+def test_an_in_memory_template_carries_no_arrays(tmp_path):
+    """A template stays sample-free: no arrays, and reloading needs data=."""
+    f, scaled = _in_memory_fitter()
+    path = os.path.join(str(tmp_path), 'template.json')
+    f.save_analysis(path, include_result=False)
+
+    section = json.load(open(path, encoding='utf-8'))['data']
+    assert section['source'] == 'memory'
+    assert 'arrays' not in section
+
+    with pytest.raises(AnalysisFileError, match='is a template'):
+        IQuana.load_analysis(path)
+
+    loaded = IQuana.load_analysis(path, data=scaled)
+    assert loaded.model_name == 'sphere'
+
+
+def _arrays(document):
+    return document['data']['arrays']
+
+
+@pytest.mark.parametrize(
+    'mutate, match',
+    [
+        (lambda d: d['data'].update(arrays=[1, 2]), r'data\.arrays must be a mapping'),
+        (lambda d: _arrays(d).pop('x'), r'data\.arrays\.x is required'),
+        (lambda d: _arrays(d).update(y=None), r'data\.arrays\.y is required'),
+        (lambda d: _arrays(d).update(dy='abc'), r'data\.arrays\.dy must be a list'),
+        (lambda d: _arrays(d)['x'].__setitem__(0, 'abc'), r'data\.arrays\.x\[0\]'),
+        (lambda d: _arrays(d)['x'].__setitem__(0, True), r'data\.arrays\.x\[0\]'),
+        (lambda d: _arrays(d)['y'].__setitem__(1, None), r'data\.arrays\.y\[1\]'),
+        (lambda d: _arrays(d)['y'].pop(), r'data\.arrays\.y has 19 values where x has 20'),
+        (lambda d: _arrays(d)['dx'].pop(), r'data\.arrays\.dx has 19 values'),
+        (lambda d: _arrays(d).update(mask=[0] * 20), r'data\.arrays\.mask must be a list of'),
+        (lambda d: _arrays(d)['mask'].pop(), r'data\.arrays\.mask has 19 values'),
+    ],
+)
+def test_a_malformed_arrays_section_is_an_analysis_file_error(tmp_path, mutate, match):
+    f, _ = _in_memory_fitter()
+    path = os.path.join(str(tmp_path), 'a.json')
+    f.save_analysis(path)
+    _corrupt(path, mutate)
+    with pytest.raises(AnalysisFileError, match=match):
+        IQuana.load_analysis(path)
+
+
+def test_a_missing_optional_column_reads_as_none(tmp_path):
+    f, _ = _in_memory_fitter()
+    path = os.path.join(str(tmp_path), 'a.json')
+    f.save_analysis(path)
+    _corrupt(path, lambda d: d['data']['arrays'].pop('dxl'))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        loaded = IQuana.load_analysis(path)
+    assert loaded.data.dxl is None
+
+
 def test_a_schema_2_in_memory_analysis_still_needs_data(tmp_path):
     """Files written before arrays were embedded keep the old contract."""
     f, scaled = _in_memory_fitter()
