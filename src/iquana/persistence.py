@@ -15,9 +15,12 @@ deliberately forwards non-identifier atoms to sasmodels, which resolves
 file can still cause code to run once it is interpreted as a model-loading
 instruction. Only built-in model names are accepted unless the caller opts in.
 
-**No bulk arrays.** Data curves and posterior chains stay out. A covariance
-matrix does not: it is ``n_free`` by ``n_free``, and it is the most useful part
-of a result to keep.
+**No bulk arrays, except a dataset that has no file.** Fitted curves and
+posterior chains stay out. A covariance matrix does not: it is ``n_free`` by
+``n_free``, and it is the most useful part of a result to keep. An in-memory
+dataset (``set_data``: a ``data_ops`` result, a simulated or computed curve) is
+written out, because nothing else can bring it back. A template
+(``include_result=False``) is the exception: it stays sample-free.
 """
 
 import hashlib
@@ -33,7 +36,7 @@ from sasmodels import core
 
 from . import __version__
 from .console import OK, logger
-from .data.provenance import DataSource, fingerprint_arrays
+from .data.provenance import ARRAY_FIELDS, DataSource, fingerprint_arrays
 from .data.resolution import ResolutionSetting
 from .fileio import atomic_write
 from .report import json_safe
@@ -43,14 +46,20 @@ SCHEMA_FORMAT = 'iquana-analysis'
 # Version 2 (#72 item 3) fills the 'weighting' key that version 1 reserved,
 # and records the weighting in each fit context. Version 1 documents read as
 # 'dI', the only weighting that existed when they were written.
-SCHEMA_VERSION = 2
-SUPPORTED_VERSIONS = (1, 2)
+# Version 3 embeds the arrays of an in-memory dataset in the 'data' section, so
+# an analysis saved from set_data() reloads without data=. Version 1 and 2
+# documents have no arrays and still need data= for such a dataset.
+SCHEMA_VERSION = 3
+SUPPORTED_VERSIONS = (1, 2, 3)
 
 #: The weighting every pre-weighting (0.4, schema 1) fit was made under.
 DEFAULT_WEIGHTING = {'mode': 'dI'}
 
 #: Relative tolerance for the reconstructed-chi-squared self-check.
 CHISQ_TOLERANCE = 1e-6
+
+#: The strings ``_arrays_section`` writes for non-finite array entries.
+_NON_FINITE_TOKENS = ('nan', 'inf', '-inf')
 
 _POSITIVE_INFINITY = 'Infinity'
 _NEGATIVE_INFINITY = '-Infinity'
@@ -403,7 +412,15 @@ def _relative_path(target: str, analysis_path: str) -> str | None:
         return None
 
 
-def _data_section(source: DataSource, data: Any, analysis_path: str) -> dict[str, Any]:
+def _data_section(
+    source: DataSource, data: Any, analysis_path: str, *, include_arrays: bool = True
+) -> dict[str, Any]:
+    """The 'data' section for *source*.
+
+    *include_arrays* is False for a template (``include_result=False``): a
+    template stays sample-free, so an in-memory dataset is described but not
+    embedded, and reloading it needs ``data=``.
+    """
     section: dict[str, Any] = {
         'source': source.kind,
         'label': source.label,
@@ -412,6 +429,8 @@ def _data_section(source: DataSource, data: Any, analysis_path: str) -> dict[str
         'array_fingerprint_now': fingerprint_arrays(data),
         'processes': list(source.processes),
     }
+    if source.kind == 'memory' and include_arrays:
+        section['arrays'] = _arrays_section(data)
     if source.kind == 'file':
         section['path_absolute'] = source.path
         section['path_relative'] = _relative_path(source.path or '', analysis_path)
@@ -421,6 +440,103 @@ def _data_section(source: DataSource, data: Any, analysis_path: str) -> dict[str
         section['file_sha256_at_load'] = source.file_sha256
         section['file_sha256_now'] = source.current_file_sha256()
     return section
+
+
+def _arrays_section(data: Any) -> dict[str, Any]:
+    """The columns ``fingerprint_arrays`` covers, as JSON.
+
+    Non-finite values are written as the strings ``float()`` reads back
+    (``'nan'``, ``'inf'``, ``'-inf'``): a masked point may carry a NaN, and
+    the reloaded arrays must reproduce the fingerprint exactly.
+    """
+    section: dict[str, Any] = {}
+    for name in ARRAY_FIELDS:
+        values = getattr(data, name, None)
+        section[name] = (
+            None
+            if values is None
+            else [v if math.isfinite(v) else str(v) for v in np.asarray(values, float).tolist()]
+        )
+    mask = getattr(data, 'mask', None)
+    section['mask'] = None if mask is None else np.asarray(mask, dtype=bool).tolist()
+    return section
+
+
+def _parse_array_value(value: Any, path: str) -> float:
+    """One stored array entry: a finite number or ``'nan'``/``'inf'``/``'-inf'``."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        _require(math.isfinite(value), path, 'holds a non-finite number')
+        return float(value)
+    _require(
+        value in _NON_FINITE_TOKENS,
+        path,
+        f"must hold numbers or 'nan', 'inf', '-inf', got {value!r}",
+    )
+    return float(value)
+
+
+def _validate_arrays(arrays: Any) -> dict[str, np.ndarray | None]:
+    """Check an ``arrays`` section and return its columns as numpy arrays.
+
+    A hand-edited or truncated file is an expected input, so every problem is
+    an ``AnalysisFileError`` naming the offending key. A missing optional
+    column reads as None.
+    """
+    _require(isinstance(arrays, dict), 'data.arrays', 'must be a mapping')
+    columns: dict[str, np.ndarray | None] = {}
+    for name in ARRAY_FIELDS:
+        path = f'data.arrays.{name}'
+        values = arrays.get(name)
+        if name in ('x', 'y'):
+            _require(values is not None, path, 'is required')
+        if values is None:
+            columns[name] = None
+            continue
+        _require(isinstance(values, list), path, 'must be a list or null')
+        columns[name] = np.array(
+            [_parse_array_value(v, f'{path}[{i}]') for i, v in enumerate(values)], dtype=float
+        )
+
+    n_points = len(columns['x'])  # type: ignore[arg-type]
+    for name, column in columns.items():
+        if column is not None:
+            _require(
+                len(column) == n_points,
+                f'data.arrays.{name}',
+                f'has {len(column)} values where x has {n_points}',
+            )
+
+    mask = arrays.get('mask')
+    if mask is not None:
+        _require(
+            isinstance(mask, list) and all(isinstance(m, bool) for m in mask),
+            'data.arrays.mask',
+            'must be a list of booleans or null',
+        )
+        _require(
+            len(mask) == n_points,
+            'data.arrays.mask',
+            f'has {len(mask)} values where x has {n_points}',
+        )
+    return columns
+
+
+def _dataset_from_section(section: dict[str, Any]) -> Any:
+    """Rebuild the in-memory dataset an ``arrays`` section was written from."""
+    from sasdata.dataloader.data_info import Data1D, Process
+
+    columns = _validate_arrays(section.get('arrays'))
+    data = Data1D(x=columns['x'], y=columns['y'], dx=columns['dx'], dy=columns['dy'])
+    data.dxl, data.dxw = columns['dxl'], columns['dxw']
+    mask = section['arrays'].get('mask')
+    if mask is not None:
+        data.mask = np.array(mask, dtype=bool)
+    data.title = section.get('label', '')
+    for line in section.get('processes') or []:
+        process = Process()
+        process.name, _, process.description = line.partition(': ')
+        data.process.append(process)
+    return data
 
 
 def build_analysis_dict(
@@ -437,11 +553,17 @@ def build_analysis_dict(
             'version': SCHEMA_VERSION,
             'written_by': __version__,
             'sasmodels': _package_version('sasmodels'),
+            'sinccity': _package_version('sinccity'),
         },
         'data': (
             None
             if fitter._data_source is None
-            else _data_section(fitter._data_source, fitter.data, analysis_path)
+            else _data_section(
+                fitter._data_source,
+                fitter.data,
+                analysis_path,
+                include_arrays=include_result,
+            )
         ),
         'configuration': encode_numbers(config, 'configuration'),
         'resolution': fitter.get_resolution(),
@@ -600,11 +722,20 @@ def resolve_data(
             'This analysis was saved without any data. Supply one with '
             'load_analysis(path, data=...).'
         )
+    if section.get('source') == 'memory' and section.get('arrays'):
+        return _dataset_from_section(section), None
     if section.get('source') != 'file':
         detail = '; '.join(section.get('processes') or []) or section.get('label', '')
+        version = (document.get('schema') or {}).get('version', SCHEMA_VERSION)
+        why = (
+            'was written before IQuana stored its arrays (schema version 3)'
+            if isinstance(version, int) and version < 3
+            else 'is a template (saved with include_result=False), which stores no data'
+        )
         raise AnalysisFileError(
-            'This analysis used an in-memory dataset, which cannot be reloaded '
-            f'from the file. Supply it with load_analysis(path, data=...). It was: {detail}'
+            f'This analysis used an in-memory dataset and {why}, so it cannot be '
+            f'reloaded from the file. Supply it with load_analysis(path, data=...). '
+            f'It was: {detail}'
         )
 
     tried: list[str] = []
@@ -642,7 +773,7 @@ def warn_about_source_changes(document: dict[str, Any], data: Any, supplied: boo
         )
     else:
         warnings.warn(
-            'The data file has changed since this analysis was saved. The '
+            'The data has changed since this analysis was saved. The '
             'configuration is restored; any saved fit result is not.',
             stacklevel=3,
         )
