@@ -1,6 +1,6 @@
 # SANS Model Fitter
 
-> **⚠️ This project has moved.** SANS-fitter is no longer maintained. Development continues at [**IQuana**](https://github.com/ai4se1dk/IQuana). Please use that repository for new issues, PRs, and releases.
+> **⚠️ This project has moved.** SANS-fitter is no longer maintained. Development continues at [**IQuana**](https://github.com/SasView/IQuana). Please use that repository for new issues, PRs, and releases.
 
 
 [![Tests](https://github.com/ai4se1dk/SANS-fitter/actions/workflows/ci.yml/badge.svg)](https://github.com/ai4se1dk/SANS-fitter/actions/workflows/ci.yml)
