@@ -21,6 +21,13 @@ dependencies = [
     "bumps>=1.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/SasView/IQuana"
+Documentation = "https://sasview.github.io/IQuana/"
+Repository = "https://github.com/SasView/IQuana"
+Issues = "https://github.com/SasView/IQuana/issues"
+Changelog = "https://github.com/SasView/IQuana/blob/main/CHANGELOG.md"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
