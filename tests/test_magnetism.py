@@ -239,6 +239,30 @@ def test_all_zero_amplitudes_warn(image):
         fitter.fit()
 
 
+def test_linked_amplitudes_are_judged_by_their_target(image):
+    """Every *_M0 a link follower used to leave nothing to check, refusing the fit."""
+    fitter = magnetic_fitter(image, beam='pa+-', sld_mtheta=90)
+    fitter.link_params('sld_M0', 'sld')
+    fitter.link_params('sld_solvent_M0', 'sld')
+    fitter.set_param('radius', min=10, max=200, vary=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        fitter.fit()
+
+
+def test_the_sensitivity_probe_runs_only_for_varied_magnetic_parameters(image, monkeypatch):
+    fitter = magnetic_fitter(image, beam='sanspol+', sld_M0=1.5, sld_mtheta=90)
+    fitter.set_param('radius', min=10, max=200, vary=True)
+    calls = []
+    evaluate = fitter._evaluate
+    monkeypatch.setattr(fitter, '_evaluate', lambda *a, **k: calls.append(1) or evaluate(*a, **k))
+    fitter._check_magnetism(fitter._evaluation_data(warn=False))
+    assert calls == []
+    fitter.set_param('sld_mtheta', min=0, max=180, vary=True)
+    fitter._check_magnetism(fitter._evaluation_data(warn=False))
+    assert len(calls) == 2  # the base curve and one trial
+
+
 def test_the_default_polarisation_warns(image):
     fitter = magnetic_fitter(image, sld_M0=1.0, sld_mtheta=90)
     fitter.set_param('radius', min=10, max=200, vary=True)
@@ -308,6 +332,26 @@ def test_structure_factor_round_trip_keeps_magnetic_values(image):
     fitter.remove_structure_factor()
     assert fitter.params['sld_M0']['value'] == 1.3
     assert fitter.is_magnetism_enabled()
+
+
+@pytest.mark.parametrize('method', ['apply', 'remove'])
+def test_a_failed_structure_factor_change_keeps_magnetism(image, monkeypatch, method):
+    fitter = magnetic_fitter(image, sld_M0=1.3)
+    if method == 'remove':
+        fitter.set_structure_factor('hardsphere')
+    sf_manager = fitter._param_manager._sf_manager
+
+    def fail(*args, **kwargs):
+        raise RuntimeError('boom')
+
+    monkeypatch.setattr(sf_manager, method, fail)
+    with pytest.raises((ValueError, RuntimeError), match='boom'):
+        if method == 'apply':
+            fitter.set_structure_factor('hayter_msa')
+        else:
+            fitter.remove_structure_factor()
+    assert fitter.is_magnetism_enabled()
+    assert fitter.params['sld_M0']['value'] == 1.3
 
 
 def test_magnetic_analysis_round_trips(image, tmp_path):

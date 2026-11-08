@@ -1066,12 +1066,19 @@ class ParameterManager:
             self.backup_pd_state()
         previous_mode = self._radius_effective_mode
         exposed = self._hide_magnetic()
-        self.params = self._sf_manager.apply(
-            kernel=kernel,
-            sf_name=structure_factor_name,
-            re_mode=radius_effective_mode,
-            current_params=self.params,
-        )
+        try:
+            self.params = self._sf_manager.apply(
+                kernel=kernel,
+                sf_name=structure_factor_name,
+                re_mode=radius_effective_mode,
+                current_params=self.params,
+            )
+        except Exception:
+            # The fitter keeps its old kernel on failure, so magnetism must
+            # come back exactly as it was, not silently switched off.
+            if exposed:
+                self._show_magnetic()
+            raise
         # The product kernel keeps the form factor's magnetic names; carry the
         # entries over so their values survive.
         derived = derive_magnetic_params(kernel)
@@ -1105,7 +1112,12 @@ class ParameterManager:
         """
         was_linked = self._radius_effective_mode == 'link_radius'
         exposed = self._hide_magnetic()
-        sf_name, restored_params = self._sf_manager.remove()
+        try:
+            sf_name, restored_params = self._sf_manager.remove()
+        except Exception:
+            if exposed:
+                self._show_magnetic()
+            raise
         self.params = restored_params
         if exposed:
             self._show_magnetic()

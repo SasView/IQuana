@@ -459,7 +459,12 @@ def build_analysis_dict(
         'resolution': fitter.get_resolution(),
         'weighting': fitter.get_weighting(),
         'fit_range': _fit_range_section(fitter),
-        'mask': None if fitter._selection is None else fitter._selection.to_dict(fitter.data),
+        # Through the codec: a ring's open qmax is inf, which strict JSON rejects.
+        'mask': (
+            None
+            if fitter._selection is None
+            else encode_numbers(fitter._selection.to_dict(fitter.data), 'mask')
+        ),
         'result': None,
         'result_omitted': None,
     }
@@ -857,8 +862,14 @@ def read_analysis(
     fitter = fitter_cls()
 
     source, selector = resolve_data(document, filename, data)
+    mask = document.get('mask')
     if isinstance(source, str):
         fitter.load_data(source, dataset=0 if selector is None else selector)
+    elif is_2d(source) and isinstance(mask, dict):
+        # Read the object's mask the way it was read when the analysis was
+        # saved; the class default can be the opposite (see data/selection.py).
+        # Absent in files written before the convention was recorded.
+        fitter.set_data(source, mask_convention=mask.get('mask_convention'))
     else:
         fitter.set_data(source)
     warn_about_source_changes(document, fitter.data, supplied=data is not None)
@@ -892,8 +903,8 @@ def read_analysis(
 
     # Before the Q range, whose point count depends on the selection, and
     # before the result, whose fit context records it.
-    mask = document.get('mask')
     if isinstance(mask, dict) and fitter._selection is not None:
+        mask = {**mask, 'operations': decode_numbers(mask.get('operations') or [])}
         problem = fitter._selection.restore(mask, fitter.data)
         if problem:
             warnings.warn(

@@ -78,6 +78,12 @@ class Selection:
 
     file_excluded: np.ndarray
     user_excluded: np.ndarray
+    #: Pixels no fit can use: non-finite intensity, or at the origin. Computed
+    #: once in :meth:`from_data`; the dataset is fixed once ingested.
+    invalid: np.ndarray
+    #: How the file mask was read (``'include'`` or ``'exclude'``). Saved with
+    #: the analysis so an in-memory dataset is re-read the same way.
+    convention: str = 'exclude'
     #: Human-readable record of the calls that built ``user_excluded``.
     operations: list[dict[str, Any]] = field(default_factory=list)
 
@@ -95,15 +101,17 @@ class Selection:
         else:
             mask = np.asarray(mask, dtype=bool)
             excluded = ~mask if convention == 'include' else mask.copy()
-        return cls(file_excluded=excluded, user_excluded=np.zeros(n, dtype=bool))
+        invalid = ~np.isfinite(intensity(data)) | (q_magnitude(data) <= ORIGIN_Q)
+        return cls(
+            file_excluded=excluded,
+            user_excluded=np.zeros(n, dtype=bool),
+            invalid=invalid,
+            convention=convention,
+        )
 
-    def invalid(self, data: Any) -> np.ndarray:
-        """Pixels no fit can use: non-finite intensity, or at the origin."""
-        return ~np.isfinite(intensity(data)) | (q_magnitude(data) <= ORIGIN_Q)
-
-    def excluded(self, data: Any) -> np.ndarray:
+    def excluded(self) -> np.ndarray:
         """The full exclusion mask, in sasmodels' convention (True = excluded)."""
-        return self.file_excluded | self.user_excluded | self.invalid(data)
+        return self.file_excluded | self.user_excluded | self.invalid
 
     def exclude(self, pixels: np.ndarray, operation: dict[str, Any]) -> int:
         """Add *pixels* to the user exclusions; return how many were newly excluded."""
@@ -112,13 +120,13 @@ class Selection:
         self.operations.append(operation)
         return new
 
-    def counts(self, data: Any) -> dict[str, int]:
+    def counts(self) -> dict[str, int]:
         return {
             'pixels': int(self.file_excluded.size),
             'file': int(self.file_excluded.sum()),
             'user': int(self.user_excluded.sum()),
-            'invalid': int(self.invalid(data).sum()),
-            'excluded': int(self.excluded(data).sum()),
+            'invalid': int(self.invalid.sum()),
+            'excluded': int(self.excluded().sum()),
         }
 
     def digest(self) -> str:
@@ -132,6 +140,7 @@ class Selection:
             'user_excluded': base64.b64encode(packed.tobytes()).decode('ascii'),
             'user_excluded_sha256': self.digest(),
             'coordinates_sha256': coordinate_digest(data),
+            'mask_convention': self.convention,
             'operations': [dict(op) for op in self.operations],
         }
 

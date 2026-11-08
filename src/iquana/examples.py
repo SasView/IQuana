@@ -48,7 +48,7 @@ from sasmodels.core import load_model
 from sasmodels.direct_model import DirectModel
 
 from .data.loader import has_real_data, load_sans_data, normalize_sans_data, validate_q_grid
-from .data.view import is_2d, uncertainty
+from .data.view import is_2d, q_magnitude, uncertainty
 from .fitter import IQuana
 from .fitting.theory import evaluate_theory, scatter_to_full_length, theory_data_2d
 from .modeling.magnetism import beam_fractions
@@ -679,7 +679,7 @@ def _describe_one(example: Example) -> None:
         return
 
     if is_2d(data):
-        q = np.hypot(data.qx_data, data.qy_data)
+        q = q_magnitude(data)
         print(f'  pixels            {q.size} (2D)')
         print(f'  |Q| range         {q.min():.5g} to {q.max():.5g} 1/A')
         print(f'  dI column         {"yes" if has_real_data(uncertainty(data)) else "no"}')
@@ -961,7 +961,7 @@ def simulate_2d(
         err_data=None if noise == 0 else uncertainty_values,
         qx_data=qx,
         qy_data=qy,
-        q_data=np.hypot(qx, qy),
+        q_data=q_magnitude(template),
         mask=np.ones(qx.size, dtype=bool),
         dqx_data=template.dqx_data,
         dqy_data=template.dqy_data,

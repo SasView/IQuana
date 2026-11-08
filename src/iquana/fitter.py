@@ -141,6 +141,16 @@ def _validate_model_expression(model_name: str) -> None:
                 raise ValueError(f"Unknown model '{atomic}' in '{model_name}'.{hint}")
 
 
+def _interval(name: str, interval: Any) -> tuple[float, float] | None:
+    """A ``(low, high)`` mask interval as plain floats, rejecting NaN limits."""
+    if interval is None:
+        return None
+    low, high = (float(limit) for limit in interval)
+    if np.isnan(low) or np.isnan(high):
+        raise ValueError(f'{name} limits must not be NaN, got ({low!r}, {high!r}).')
+    return low, high
+
+
 LMFIT_AVAILABLE = SCIPY_AVAILABLE
 if not LMFIT_AVAILABLE:
     warnings.warn('scipy not available. Only bumps engine will work.', stacklevel=2)
@@ -274,12 +284,17 @@ class IQuana:
             selection = self._new_selection(data, mask_convention)
             self.data = data
             self._adopt_data(selection)
-            self._data_source = DataSource.from_memory(self.data)
-            label = (
-                getattr(data, 'title', '') or getattr(data, 'filename', '') or 'in-memory dataset'
-            )
-            logger.info(self._data_summary(f'{OK} Data set: {label}'))
-            return
+        else:
+            self._ingest_1d(data, mask_convention)
+        # Replaces any file provenance: this dataset did not come from a path,
+        # and inferring one from its metadata would be wrong (data_ops results
+        # carry an operation string in .filename, not a file).
+        self._data_source = DataSource.from_memory(self.data)
+        label = getattr(data, 'title', '') or getattr(data, 'filename', '') or 'in-memory dataset'
+        logger.info(self._data_summary(f'{OK} Data set: {label}'))
+
+    def _ingest_1d(self, data: Any, mask_convention: str | None) -> None:
+        """Validate and normalize 1D *data* into ``self.data``."""
         if mask_convention is not None:
             raise ValueError('mask_convention applies to 2D data only.')
         x = getattr(data, 'x', None)
@@ -302,12 +317,6 @@ class IQuana:
 
         self.data = normalize_sans_data(data)
         self._adopt_data(None)
-        # Replaces any file provenance: this dataset did not come from a path,
-        # and inferring one from its metadata would be wrong (data_ops results
-        # carry an operation string in .filename, not a file).
-        self._data_source = DataSource.from_memory(self.data)
-        label = getattr(data, 'title', '') or getattr(data, 'filename', '') or 'in-memory dataset'
-        logger.info(self._data_summary(f'{OK} Data set: {label}'))
 
     @property
     def is_2d(self) -> bool:
@@ -321,7 +330,7 @@ class IQuana:
             return None
         validate_2d(data)
         selection = Selection.from_data(data, mask_convention)
-        if selection.excluded(data).all():
+        if selection.excluded().all():
             raise ValueError(
                 'Every pixel of the 2D dataset is excluded (by its mask, a non-finite '
                 'intensity or |Q| = 0). If the mask means the opposite, pass '
@@ -335,7 +344,7 @@ class IQuana:
         if selection is not None:
             # The |Q| extent of the usable pixels; sasmodels' own Data2D
             # defaults (1e-16, inf) would make set_q_range() meaningless.
-            q = q_magnitude(self.data)[~selection.excluded(self.data)]
+            q = q_magnitude(self.data)[~selection.excluded()]
             self.data.qmin, self.data.qmax = float(q.min()), float(q.max())
         self._full_q_range = (self.data.qmin, self.data.qmax)
         if self.is_magnetism_enabled() and selection is None:
@@ -359,7 +368,7 @@ class IQuana:
                 f'  Resolution (dQ) column: {"yes" if has_real_data(data.dx) else "no"}',
             ]
         else:
-            counts = self._selection.counts(data)
+            counts = self._selection.counts()
             zero_di = int(zero_uncertainty(data).sum())
             qx, qy = np.asarray(data.qx_data), np.asarray(data.qy_data)
             has_dq = has_real_data(getattr(data, 'dqx_data', None)) and has_real_data(
@@ -384,7 +393,7 @@ class IQuana:
 
     def _fit_index(self) -> np.ndarray:
         """Points the fit selects in ``self.data``, honouring the 2D selection."""
-        excluded = None if self._selection is None else self._selection.excluded(self.data)
+        excluded = None if self._selection is None else self._selection.excluded()
         return get_fit_index(self.data, excluded=excluded)
 
     # =========================================================================
@@ -397,7 +406,7 @@ class IQuana:
         return self._selection
 
     def _report_exclusion(self, what: str, newly: int) -> None:
-        counts = self._selection.counts(self.data)
+        counts = self._selection.counts()
         logger.info(
             f'{OK} {what}: {newly} more pixels excluded '
             f'({counts["user"]} by masks, {int(self._fit_index().sum())} of '
@@ -415,6 +424,9 @@ class IQuana:
                 every |Q| (neither limit given).
         """
         selection = self._require_2d()
+        qmin, qmax = float(qmin), float(qmax)
+        if np.isnan(qmin) or np.isnan(qmax):
+            raise ValueError(f'qmin and qmax must not be NaN, got {qmin!r} and {qmax!r}.')
         if qmin <= 0 and np.isinf(qmax):
             raise ValueError(
                 'Give qmax (a beam stop) or qmin (an outer cut); both open masks everything.'
@@ -441,6 +453,7 @@ class IQuana:
         selection = self._require_2d()
         if qx is None and qy is None:
             raise ValueError('Give qx=(low, high), qy=(low, high), or both.')
+        qx, qy = _interval('qx', qx), _interval('qy', qy)
         operation = {
             'op': 'box',
             'qx': None if qx is None else list(qx),
@@ -497,9 +510,9 @@ class IQuana:
             array itself (True = excluded, before the Q range).
         """
         selection = self._require_2d()
-        counts = selection.counts(self.data)
+        counts = selection.counts()
         counts['fitted'] = int(self._fit_index().sum())
-        counts['excluded'] = selection.excluded(self.data)
+        counts['excluded'] = selection.excluded()
         return counts
 
     def set_q_range(self, qmin: float | None = None, qmax: float | None = None) -> None:
@@ -771,7 +784,7 @@ class IQuana:
         )
         if self._selection is not None and is_2d(evaluation_data):
             # The one place sasmodels' exclusion mask is written: on the copy.
-            evaluation_data.mask = self._selection.excluded(evaluation_data)
+            evaluation_data.mask = self._selection.excluded()
             evaluation_data.q_data = q_magnitude(evaluation_data)
         # apply_resolution returned a fresh deep copy nobody else holds, so the
         # weighting is written onto it rather than copying a second time.
@@ -2005,9 +2018,18 @@ class IQuana:
                 stacklevel=4,
             )
 
-        amplitudes = {name: params[name] for name in magnetic if name.endswith('_M0')}
-        all_zero = all(info['value'] == 0 and not info['vary'] for info in amplitudes.values())
-        can_vanish = all(
+        # A linked amplitude takes its target's value, so judge it by the target
+        # rather than leaving it out: with every *_M0 linked, an empty dict
+        # would make both all() checks below vacuously True.
+        amplitudes = {
+            name: params[links.get(name, name)]
+            for name in manager.magnetic_parameter_names()
+            if name.endswith('_M0') and links.get(name, name) in params
+        }
+        all_zero = bool(amplitudes) and all(
+            info['value'] == 0 and not info['vary'] for info in amplitudes.values()
+        )
+        can_vanish = bool(amplitudes) and all(
             (info['value'] == 0 and not info['vary'])
             or (info['vary'] and info['min'] <= 0 <= info['max'])
             for info in amplitudes.values()
@@ -2030,12 +2052,15 @@ class IQuana:
             )
             return
 
+        # The sensitivity probe costs 1 + N full model evaluations; spend them
+        # only when there is a varied magnetic parameter to probe.
+        varied = [name for name in magnetic if params[name]['vary']]
+        if not varied:
+            return
         base, _ = self._evaluate(evaluation_data)
         scale = np.maximum(np.abs(base), np.finfo(np.float32).tiny)
-        for name in magnetic:
+        for name in varied:
             info = params[name]
-            if not info['vary']:
-                continue
             if name.endswith('_M0'):
                 step = 0.1 * max(abs(info['value']), 1.0)
             elif name.startswith('up_frac'):

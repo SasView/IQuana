@@ -316,6 +316,53 @@ class TestPersistence:
         assert restored._fit_contract is not None
         assert restored._fit_contract.chisq == pytest.approx(fitter._fit_contract.chisq)
 
+    def test_an_outer_ring_cut_round_trips(self, image, tmp_path):
+        """mask_ring(qmin=...) records qmax = inf, which strict JSON cannot hold."""
+        fitter = sphere_fitter(image)
+        fitter.mask_ring(qmin=0.1)
+        path = str(tmp_path / 'a.json')
+        fitter.save_analysis(path)
+        document = json.loads(open(path, encoding='utf-8').read())
+        assert document['mask']['operations'][0]['qmax'] == 'Infinity'
+        restored = IQuana.load_analysis(path, data=image)
+        assert restored.get_mask()['user'] == fitter.get_mask()['user'] > 0
+        assert restored._selection.operations[0]['qmax'] == np.inf
+
+    def test_numpy_box_limits_are_saved(self, image, tmp_path):
+        fitter = sphere_fitter(image)
+        fitter.mask_box(qx=(np.float32(-0.01), np.int64(0)))
+        fitter.save_analysis(str(tmp_path / 'a.json'))
+        assert fitter._selection.operations[0]['qx'] == [pytest.approx(-0.01), 0.0]
+
+    @pytest.mark.parametrize(
+        'call',
+        [
+            lambda f: f.mask_ring(qmin=np.nan, qmax=0.05),
+            lambda f: f.mask_ring(qmax=np.nan),
+            lambda f: f.mask_box(qx=(np.nan, 0.01)),
+        ],
+    )
+    def test_nan_mask_limits_are_refused(self, image, call):
+        fitter = sphere_fitter(image)
+        with pytest.raises(ValueError, match='NaN'):
+            call(fitter)
+        assert fitter.get_mask()['user'] == 0
+
+    def test_the_mask_convention_is_restored_for_in_memory_data(self, image, tmp_path):
+        """A sasdata object read as 'exclude' must not be re-read as 'include'."""
+        image.mask = np.zeros(image.data.size, dtype=bool)
+        image.mask[:10] = True  # exclusion convention, e.g. after sasmodels' load_data
+        fitter = IQuana()
+        fitter.set_data(image, mask_convention='exclude')
+        fitter.set_model('sphere')
+        path = str(tmp_path / 'a.json')
+        fitter.save_analysis(path)
+        assert json.loads(open(path, encoding='utf-8').read())['mask']['mask_convention'] == (
+            'exclude'
+        )
+        restored = IQuana.load_analysis(path, data=image)
+        assert restored.get_mask()['file'] == 10
+
     def test_a_mask_for_other_coordinates_is_not_applied(self, image, tmp_path):
         fitter = sphere_fitter(image)
         fitter.mask_ring(qmax=0.03)
