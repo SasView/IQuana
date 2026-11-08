@@ -4,7 +4,7 @@
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/ai4se1dk/IQuana.git
+    git clone https://github.com/SasView/IQuana.git
     cd IQuana
     ```
 

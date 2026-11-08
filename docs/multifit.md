@@ -253,7 +253,7 @@ is not `'dI'` rather than silently refitting it under a different objective:
 call `set_weighting('dI')` on it first, or fit it on its own. Every dataset in
 a joint fit therefore needs a real `dI` column. Weighting modes for
 `MultiFitter` are tracked in
-[issue #87](https://github.com/ai4se1dk/IQuana/issues/87). This is
+[issue #87](https://github.com/SasView/IQuana/issues/87). This is
 distinct from the dataset *weights* below, which scale whole datasets in the
 objective.
 

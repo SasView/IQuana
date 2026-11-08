@@ -12,7 +12,7 @@ You can install IQuana directly from the repository using pip:
 
 ```bash
 # Clone the repository
-git clone https://github.com/ai4se1dk/IQuana.git
+git clone https://github.com/SasView/IQuana.git
 cd IQuana
 
 # Install the package
@@ -38,7 +38,7 @@ If you use [Pixi](https://prefix.dev/) for package management:
 
 ```bash
 # Clone the repository
-git clone https://github.com/ai4se1dk/IQuana.git
+git clone https://github.com/SasView/IQuana.git
 cd IQuana
 
 # Install dependencies

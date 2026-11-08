@@ -569,7 +569,7 @@ data, and the error message points here.
 - **Joint fits** (`MultiFitter`) always weight each dataset by its own `dI`,
   and `add_fitter()` refuses a fitter set to another mode rather than
   silently refitting it under `'dI'`. Weighting modes for joint fits are
-  tracked in [issue #87](https://github.com/ai4se1dk/IQuana/issues/87).
+  tracked in [issue #87](https://github.com/SasView/IQuana/issues/87).
 - **Exporting data without `dI`.** When the dataset was built with no
   uncertainties at all (`dy=None`), `save_results()` writes `nan` in the
   `dI_exp` column and says so in the header, rather than passing off unit

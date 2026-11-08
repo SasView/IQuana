@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://ai4se1dk.github.io/IQuana/">
+  <a href="https://sasview.github.io/IQuana/">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="iquana-banner-dark.png">
       <source media="(prefers-color-scheme: light)" srcset="iquana-banner-light.png">
@@ -10,11 +10,11 @@
 
 # IQuana - SANS Model Fitter
 
-[![Tests](https://github.com/ai4se1dk/IQuana/actions/workflows/ci.yml/badge.svg)](https://github.com/ai4se1dk/IQuana/actions/workflows/ci.yml)
-[![Docs](https://github.com/ai4se1dk/IQuana/actions/workflows/docs.yml/badge.svg)](https://ai4se1dk.github.io/IQuana/)
+[![Tests](https://github.com/SasView/IQuana/actions/workflows/ci.yml/badge.svg)](https://github.com/SasView/IQuana/actions/workflows/ci.yml)
+[![Docs](https://github.com/SasView/IQuana/actions/workflows/docs.yml/badge.svg)](https://sasview.github.io/IQuana/)
 [![PyPI badge](https://img.shields.io/pypi/v/IQuana.svg)](https://pypi.python.org/pypi/IQuana)
-[![Docs badge](https://img.shields.io/badge/docs-built-blue)](https://ai4se1dk.github.io/IQuana/)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/2ac22dd161034cdebb7478c395aff59c)](https://app.codacy.com/gh/ai4se1dk/IQuana/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![Docs badge](https://img.shields.io/badge/docs-built-blue)](https://sasview.github.io/IQuana/)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/2ac22dd161034cdebb7478c395aff59c)](https://app.codacy.com/gh/SasView/IQuana/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
 
 A flexible, model-agnostic Python template for fitting Small-Angle Neutron Scattering (SANS) data using the SasModels library.
@@ -46,7 +46,7 @@ A flexible, model-agnostic Python template for fitting Small-Angle Neutron Scatt
 
 ```bash
 # Clone the repository
-git clone https://github.com/ai4se1dk/IQuana.git
+git clone https://github.com/SasView/IQuana.git
 cd IQuana
 
 # Install the package
@@ -63,7 +63,7 @@ pip install -e ".[notebooks]"
 
 ```bash
 # Clone the repository
-git clone https://github.com/ai4se1dk/IQuana.git
+git clone https://github.com/SasView/IQuana.git
 cd IQuana
 
 # Install dependencies with Pixi
@@ -313,7 +313,7 @@ posterior = fitter.get_posterior()
 posterior.save_posterior_csv('posterior_chain.csv')
 ```
 
-See the [User Guide](https://ai4se1dk.github.io/IQuana/usage/) for details.
+See the [User Guide](https://sasview.github.io/IQuana/usage/) for details.
 
 ### Available Methods
 

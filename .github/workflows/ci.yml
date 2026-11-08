@@ -68,7 +68,7 @@ jobs:
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: ./coverage.xml
-        slug: ai4se1dk/IQuana
+        slug: SasView/IQuana
 
     # Was a separate workflow that re-ran the whole suite to produce the same
     # coverage.xml. Uploading is best-effort: secrets are not available to

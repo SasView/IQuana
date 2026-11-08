@@ -1,8 +1,8 @@
 site_name: IQuana Documentation
 site_description: A flexible template for fitting SANS data with SasModels
 site_author: IQuana contributors
-repo_url: https://github.com/ai4se1dk/IQuana
-repo_name: ai4se1dk/IQuana
+repo_url: https://github.com/SasView/IQuana
+repo_name: SasView/IQuana
 edit_uri: edit/main/docs/
 
 theme:
