@@ -61,7 +61,7 @@ The full `IQuana` feature set is comprehensively described in the documentation,
 
 
 # Research impact statement
-`IQuana` began life as a pilot project, `sans-fitter` (released January 2026), and has since evolved into a much more full-fledged repository. The intended audience is research staff for primary scientific research with wide-reaching potential impact. Beyond this, we see `IQuana` as an pedagogical tool, which has already been used effectively in summer schools and undergraduate teaching curricula, for conveying challenging concepts around the analysis of small-angle scattering data. 
+`IQuana` began life as a pilot project, `sans-fitter` (released January 2026), and has since evolved into a much more full-fledged repository and part of the `SasView` ecosystem. The intended audience is research staff conudcting primary scientific research with wide-reaching potential impact. Beyond this, we see `IQuana` as a pedagogical tool, which has already been used effectively in summer schools and undergraduate teaching curricula, for conveying challenging concepts around the analysis of small-angle scattering data. 
 
 
 # AI usage disclosure
