@@ -405,14 +405,30 @@ class TestPersistence:
         assert fitter.get_resolution() == saved['resolution']
         assert 'magnetism' not in fitter._param_manager.export_config()
 
-    def test_in_memory_1d_data_still_needs_data_on_reload(self, tmp_path):
+    def test_in_memory_1d_data_reloads_from_its_embedded_arrays(self, tmp_path):
         fitter = IQuana()
         fitter.set_data(examples.simulate('sphere'))
         fitter.set_model('sphere')
         path = str(tmp_path / 'a.json')
         fitter.save_analysis(path)
-        with pytest.raises(AnalysisFileError, match='in-memory'):
+        document = json.loads(open(path, encoding='utf-8').read())
+        assert document['data']['dimension'] == 1
+        assert 'arrays' in document['data']
+        restored = IQuana.load_analysis(path)
+        assert not restored.is_2d
+        assert fingerprint_arrays(restored.data) == fingerprint_arrays(fitter.data)
+
+    def test_in_memory_2d_data_is_not_embedded_and_needs_data(self, image, tmp_path):
+        fitter = sphere_fitter(image)
+        path = str(tmp_path / 'a.json')
+        fitter.save_analysis(path)
+        document = json.loads(open(path, encoding='utf-8').read())
+        assert document['data']['source'] == 'memory'
+        assert 'arrays' not in document['data']
+        with pytest.raises(AnalysisFileError, match='is 2D'):
             IQuana.load_analysis(path)
+        restored = IQuana.load_analysis(path, data=image)
+        assert restored.is_2d
 
 
 def test_add_fitter_copies_keep_the_pixel_count(image):

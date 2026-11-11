@@ -5,8 +5,9 @@ All notable changes to this project are documented in this file.
 ## [0.6.0] - unreleased
 
 This release adds 2D data and magnetic (polarised) SANS
-([#21](https://github.com/ai4se1dk/IQuana/issues/21)). 1D analyses behave as
-before, and analysis files written by 0.5 keep their fit results.
+([#21](https://github.com/ai4se1dk/IQuana/issues/21)), and the Generic
+Scattering Calculator. 1D analyses behave as before, and analysis files
+written by 0.5 keep their fit results.
 
 ### Added
 
@@ -36,17 +37,41 @@ before, and analysis files written by 0.5 keep their fit results.
 - A fit warns when orientation parameters vary on 1D data, where they have no
   effect.
 - `notebooks/magnetic_2d_fitting.ipynb` and `examples/magnetic_2d_example.py`.
+- **Generic Scattering Calculator.** `iquana.GenericScatteringCalculator` and
+  the `iquana.structure` module expose the
+  [SincCity](https://easyscience.github.io/SincCity/) package: I(q) of atoms
+  (PDB, GRO), pixels (SLD) or mesh cells (VTK) by the Debye formula, a 3D view
+  of the points, contrast series, and a settings record that replays a
+  calculation.
+  - `IQuana.set_data()`, `MultiFitter.add()` and
+    `IQuana.load_analysis(data=...)` accept a `ScatteringProfile` directly.
+  - The fit guard names the weighting and resolution to set for a computed
+    curve.
+  - `set_verbosity()` covers SincCity's messages, and anything that captures
+    the `iquana` logger receives them.
+  - Walkthroughs: `examples/structure_calculator_example.py` and
+    `notebooks/structure_calculator.ipynb`; example structures in
+    `examples/data/`.
+- `save_analysis()` writes the arrays of an in-memory 1D dataset (a
+  `data_ops` result, a simulated or computed curve) into the analysis file, so
+  `load_analysis(path)` reopens it without `data=`. A template
+  (`include_result=False`) embeds no arrays and still needs `data=`, as does
+  an in-memory 2D dataset. The `schema` block also records the SincCity
+  version.
 
 ### Changed
 
 - The analysis file schema is version 3. It adds `data.dimension`, a `mask`
-  section and, only when used, `configuration.magnetism` and
-  `resolution.accuracy`. Versions 1 and 2 load as before, with their results.
+  section, the arrays of an in-memory 1D dataset (`data.arrays`) and, only
+  when used, `configuration.magnetism` and `resolution.accuracy`. Versions 1
+  and 2 load as before, with their results; an IQuana 0.5 refuses a version 3
+  file with its "newer schema" message.
 - `examples.simulate()` rejects magnetic parameters, which it used to accept
   and silently ignore.
 - `MultiFitter` refuses 2D data with a clear message before adding it.
 - The minimum versions are now `sasmodels>=1.0.12` and `sasdata>=0.11`, the
   oldest the tests run against.
+- `sinccity` is a required dependency.
 
 ## [0.5.0] - 2026-10-28
 

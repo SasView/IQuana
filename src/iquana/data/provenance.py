@@ -28,7 +28,7 @@ import numpy as np
 
 from .view import is_2d, n_points
 
-_ARRAY_FIELDS = ('x', 'y', 'dy', 'dx', 'dxl', 'dxw')
+ARRAY_FIELDS = ('x', 'y', 'dy', 'dx', 'dxl', 'dxw')
 # 2D data: the file arrays only. The user's pixel selection is fitter state and
 # is fingerprinted separately, so a beam stop does not read as "data changed".
 _ARRAY_FIELDS_2D = ('qx_data', 'qy_data', 'data', 'err_data', 'dqx_data', 'dqy_data')
@@ -58,7 +58,7 @@ def fingerprint_arrays(data: Any) -> str:
     unchanged, so fingerprints stored by earlier versions still match.
     """
     digest = hashlib.sha256()
-    for name in _ARRAY_FIELDS_2D if is_2d(data) else _ARRAY_FIELDS:
+    for name in _ARRAY_FIELDS_2D if is_2d(data) else ARRAY_FIELDS:
         digest.update(name.encode())
         values = getattr(data, name, None)
         if values is None:
@@ -142,6 +142,10 @@ class DataSource:
             label=label,
             processes=describe_processes(data),
         )
+
+    def is_computed_curve(self) -> bool:
+        """True for a curve from the Generic Scattering Calculator (SincCity)."""
+        return any(line.startswith('sinccity:') for line in self.processes)
 
     def current_file_sha256(self) -> str | None:
         """Re-hash the source file now, or None when there is no readable file."""
