@@ -57,7 +57,10 @@ _KERNELS: dict[str, object] = {}
 def _clean_intensity(model_name: str, pars: dict, q: np.ndarray) -> np.ndarray:
     """Evaluate a sasmodels kernel at q (sasmodels used only for evaluation)."""
     if model_name not in _KERNELS:
-        _KERNELS[model_name] = load_model(model_name)
+        # Pin the CPU kernel, as the library does: the default picks OpenCL
+        # whenever pyopencl is installed, and fails where the driver cannot
+        # create a context (e.g. OUT_OF_HOST_MEMORY).
+        _KERNELS[model_name] = load_model(model_name, platform='dll')
     model = DirectModel(empty_data1D(q), _KERNELS[model_name])
     return model(**pars)
 
