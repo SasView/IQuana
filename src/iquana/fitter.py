@@ -256,14 +256,16 @@ class IQuana:
         This is the injection point for datasets that were not loaded from a
         file: results of dataset arithmetic (see :mod:`iquana.data.ops`),
         simulated data, or any sasdata ``Data1D`` built programmatically. The
-        dataset is validated and normalized (``qmin``/``qmax``/``mask`` are
-        recomputed as needed) so it is fit-ready.
+        dataset is validated, and the fitter's copy is normalized
+        (``qmin``/``qmax``/``mask`` are recomputed as needed) so it is
+        fit-ready.
 
-        2D data (a sasdata or sasmodels ``Data2D``) is not modified: the
-        fitter keeps a shallow copy that shares its arrays, and its mask is
-        read once into the fitter's pixel selection and never rewritten. So
-        calling ``set_data`` twice on the same object, or giving one object to
-        several fitters, is safe: each keeps its own Q range and masks.
+        The object passed in is never modified: the fitter keeps a shallow
+        copy that shares its arrays but holds its own ``qmin``, ``qmax`` and,
+        for 1D data, ``mask``. So calling ``set_data`` twice on the same
+        object, or giving one object to several fitters, is safe: each keeps
+        its own Q range and masks. A 2D object's mask is read once into the
+        fitter's pixel selection and never rewritten.
 
         Args:
             data: A sasdata ``Data1D`` object with populated ``x`` and ``y``
@@ -334,7 +336,10 @@ class IQuana:
                 stacklevel=2,
             )
 
-        self.data = normalize_sans_data(data)
+        # normalize_sans_data() and set_q_range() set qmin/qmax/mask on the
+        # dataset; a shallow copy keeps those off the caller's object, so
+        # fitters given the same object keep independent Q ranges and masks.
+        self.data = normalize_sans_data(copy.copy(data))
         self._adopt_data(None)
 
     @property

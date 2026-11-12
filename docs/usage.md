@@ -180,7 +180,7 @@ The goodness-of-fit block means the same thing whichever engine ran:
 | `message` | The optimizer's own termination message |
 | `weighting_note` | How the residuals were weighted, e.g. `'dI'` |
 | `cov`, `cov_labels`, `cov_source` | Covariance over the varied parameters, its parameter order, and where it came from |
-| `on_bounds` | `(parameter, 'min' | 'max')` for each fitted parameter resting on a bound |
+| `on_bounds` | `(parameter, 'min' \| 'max')` for each fitted parameter resting on a bound |
 
 !!! warning "Changed in 0.4"
     `result['chisq']` from the bumps engine was χ²/dof before 0.4; use

@@ -289,10 +289,27 @@ class TestSetData(unittest.TestCase):
         fitter = IQuana()
         data = make_data1d()
         fitter.set_data(data)
-        self.assertIs(fitter.data, data)
+        # A shallow copy: the arrays are shared, the Q range and mask are not.
+        self.assertIsNot(fitter.data, data)
+        self.assertIs(fitter.data.x, data.x)
         self.assertEqual(fitter.data.qmin, data.x.min())
         self.assertEqual(fitter.data.qmax, data.x.max())
         self.assertEqual(fitter.get_q_range(), (data.x.min(), data.x.max()))
+
+    def test_fitters_sharing_one_object_keep_their_own_q_range(self):
+        data = make_data1d()
+        attrs_before = {k: getattr(data, k, None) for k in ('qmin', 'qmax', 'mask')}
+        full = (data.x.min(), data.x.max())
+        first = IQuana()
+        first.set_data(data)
+        first.set_q_range(0.05, 0.1)
+        second = IQuana()
+        second.set_data(data)
+        self.assertEqual(second.get_q_range(), full)
+        second.set_q_range(0.02, 0.04)
+        self.assertEqual(first.get_q_range(), (0.05, 0.1))
+        for name, before in attrs_before.items():
+            self.assertIs(getattr(data, name, None), before, name)
 
     def test_empty_data_rejected(self):
         fitter = IQuana()
