@@ -20,7 +20,8 @@ posterior chains stay out. A covariance matrix does not: it is ``n_free`` by
 ``n_free``, and it is the most useful part of a result to keep. An in-memory
 dataset (``set_data``: a ``data_ops`` result, a simulated or computed curve) is
 written out, because nothing else can bring it back. A template
-(``include_result=False``) is the exception: it stays sample-free.
+(``include_result=False``) is the exception: it stays sample-free. So is an
+in-memory 2D dataset for now; reloading it needs ``data=``.
 """
 
 import hashlib
@@ -38,6 +39,7 @@ from . import __version__
 from .console import OK, logger
 from .data.provenance import ARRAY_FIELDS, DataSource, fingerprint_arrays
 from .data.resolution import ResolutionSetting
+from .data.view import intensity, is_2d, uncertainty
 from .fileio import atomic_write
 from .report import json_safe
 from .results import FitArtifacts, FitResultContract, PosteriorDigest
@@ -46,9 +48,15 @@ SCHEMA_FORMAT = 'iquana-analysis'
 # Version 2 (#72 item 3) fills the 'weighting' key that version 1 reserved,
 # and records the weighting in each fit context. Version 1 documents read as
 # 'dI', the only weighting that existed when they were written.
-# Version 3 embeds the arrays of an in-memory dataset in the 'data' section, so
-# an analysis saved from set_data() reloads without data=. Version 1 and 2
-# documents have no arrays and still need data= for such a dataset.
+# Version 3 (0.6.0) makes two additions:
+# - 2D data (#21): 'data.dimension', the 'mask' section (the user's pixel
+#   selection), an optional 'configuration.magnetism' block and an optional
+#   'resolution.accuracy'. Every 2D addition is absent for an analysis that
+#   does not use it, so a version-2 analysis keeps its fit context.
+# - The arrays of an in-memory 1D dataset are embedded in the 'data' section,
+#   so an analysis saved from set_data() reloads without data=. Version 1 and 2
+#   documents have no arrays and still need data= for such a dataset, as does
+#   an in-memory 2D dataset, whose arrays are not embedded.
 SCHEMA_VERSION = 3
 SUPPORTED_VERSIONS = (1, 2, 3)
 
@@ -156,13 +164,15 @@ def build_fit_context(
     data_fingerprint: str | None,
     *,
     weighting: dict[str, Any] | None = None,
+    selection: str | None = None,
 ) -> dict[str, Any]:
     """Describe the configuration and data a fit result belongs to.
 
     A built context always carries ``weighting``; ``None`` means the default
-    ``'dI'``.
+    ``'dI'``. *selection* is the digest of a 2D fit's pixel mask, and is left
+    out entirely for 1D data so 1D contexts are what they always were.
     """
-    return {
+    context = {
         'config_digest': config_digest(config),
         'resolution': dict(resolution),
         'weighting': dict(weighting or DEFAULT_WEIGHTING),
@@ -171,6 +181,9 @@ def build_fit_context(
         'n_points': int(n_points),
         'data_fingerprint': data_fingerprint,
     }
+    if selection is not None:
+        context['selection'] = selection
+    return context
 
 
 def compare_fit_context(saved: dict[str, Any] | None, current: dict[str, Any]) -> str | None:
@@ -196,6 +209,7 @@ def compare_fit_context(saved: dict[str, Any] | None, current: dict[str, Any]) -
         ('qmin', 'the fitting Q range changed after the fit'),
         ('qmax', 'the fitting Q range changed after the fit'),
         ('data_fingerprint', 'the data changed after the fit'),
+        ('selection', 'the pixel mask changed after the fit'),
     )
     for key, reason in checks:
         if saved.get(key) != current.get(key):
@@ -419,17 +433,19 @@ def _data_section(
 
     *include_arrays* is False for a template (``include_result=False``): a
     template stays sample-free, so an in-memory dataset is described but not
-    embedded, and reloading it needs ``data=``.
+    embedded, and reloading it needs ``data=``. An in-memory 2D dataset is
+    never embedded either: the stored columns are the 1D ones.
     """
     section: dict[str, Any] = {
         'source': source.kind,
+        'dimension': 2 if is_2d(data) else 1,
         'label': source.label,
         'n_points': source.n_points,
         'array_fingerprint_at_load': source.array_fingerprint,
         'array_fingerprint_now': fingerprint_arrays(data),
         'processes': list(source.processes),
     }
-    if source.kind == 'memory' and include_arrays:
+    if source.kind == 'memory' and include_arrays and not is_2d(data):
         section['arrays'] = _arrays_section(data)
     if source.kind == 'file':
         section['path_absolute'] = source.path
@@ -569,6 +585,12 @@ def build_analysis_dict(
         'resolution': fitter.get_resolution(),
         'weighting': fitter.get_weighting(),
         'fit_range': _fit_range_section(fitter),
+        # Through the codec: a ring's open qmax is inf, which strict JSON rejects.
+        'mask': (
+            None
+            if fitter._selection is None
+            else encode_numbers(fitter._selection.to_dict(fitter.data), 'mask')
+        ),
         'result': None,
         'result_omitted': None,
     }
@@ -613,15 +635,14 @@ def _current_fit_context(fitter: Any, config: dict[str, Any]) -> dict[str, Any]:
         _fitted_point_count(fitter),
         None if fitter.data is None else fingerprint_arrays(fitter.data),
         weighting=fitter.get_weighting(),
+        selection=None if fitter._selection is None else fitter._selection.digest(),
     )
 
 
 def _fitted_point_count(fitter: Any) -> int:
-    from .data.loader import get_fit_index
-
     if fitter.data is None:
         return 0
-    return int(get_fit_index(fitter.data).sum())
+    return int(fitter._fit_index().sum())
 
 
 def write_analysis(fitter: Any, filename: str, *, include_result: bool = True) -> dict[str, Any]:
@@ -727,11 +748,12 @@ def resolve_data(
     if section.get('source') != 'file':
         detail = '; '.join(section.get('processes') or []) or section.get('label', '')
         version = (document.get('schema') or {}).get('version', SCHEMA_VERSION)
-        why = (
-            'was written before IQuana stored its arrays (schema version 3)'
-            if isinstance(version, int) and version < 3
-            else 'is a template (saved with include_result=False), which stores no data'
-        )
+        if isinstance(version, int) and version < 3:
+            why = 'was written before IQuana stored its arrays (schema version 3)'
+        elif section.get('dimension') == 2:
+            why = 'is 2D, whose arrays IQuana does not store in the analysis file'
+        else:
+            why = 'is a template (saved with include_result=False), which stores no data'
         raise AnalysisFileError(
             f'This analysis used an in-memory dataset and {why}, so it cannot be '
             f'reloaded from the file. Supply it with load_analysis(path, data=...). '
@@ -793,6 +815,13 @@ def restore_configuration(
             f"Analysis file: model expression '{expression}' is not built into "
             'sasmodels. Loading it would import a plugin module named by the '
             'file. Pass allow_custom_models=True if you trust this file.'
+        )
+
+    magnetism = config.get('magnetism')
+    if isinstance(magnetism, dict) and magnetism.get('enabled') and not fitter.is_2d:
+        raise AnalysisFileError(
+            'Analysis file: the configuration uses magnetism, which needs 2D data, '
+            'but the data loaded for it is 1D.'
         )
 
     fitter.set_model(expression)
@@ -940,12 +969,13 @@ def _rebuild_residuals(
     square-sum to the reported chi-squared), but they differ in sign: see
     ``_NEGATED_RESIDUAL_ENGINES``.
     """
-    if data.dy is None:
+    sigma = uncertainty(data)
+    if sigma is None:
         return None
-    dy = np.asarray(data.dy, dtype=float)[fit_index]
+    dy = sigma[fit_index]
     if dy.size == 0:
         return None
-    y = np.asarray(data.y, dtype=float)[fit_index]
+    y = intensity(data)[fit_index]
     if engine in _NEGATED_RESIDUAL_ENGINES:
         y, curve = curve, y
     sigma = np.where(np.nan_to_num(dy) == 0, 1.0, dy)
@@ -968,11 +998,25 @@ def read_analysis(
     fitter = fitter_cls()
 
     source, selector = resolve_data(document, filename, data)
+    mask = document.get('mask')
     if isinstance(source, str):
         fitter.load_data(source, dataset=0 if selector is None else selector)
+    elif is_2d(source) and isinstance(mask, dict):
+        # Read the object's mask the way it was read when the analysis was
+        # saved; the class default can be the opposite (see data/selection.py).
+        # Absent in files written before the convention was recorded.
+        fitter.set_data(source, mask_convention=mask.get('mask_convention'))
     else:
         fitter.set_data(source)
     warn_about_source_changes(document, fitter.data, supplied=data is not None)
+
+    section = document.get('data')
+    saved_dimension = section.get('dimension', 1) if isinstance(section, dict) else None
+    if saved_dimension is not None and saved_dimension != (2 if fitter.is_2d else 1):
+        raise AnalysisFileError(
+            f'Analysis file: the analysis was saved with {saved_dimension}D data, but the '
+            f'data loaded for it is {2 if fitter.is_2d else 1}D.'
+        )
 
     restore_configuration(fitter, document, allow_custom_models=allow_custom_models)
 
@@ -984,6 +1028,7 @@ def read_analysis(
             dq_over_q=setting.dq_over_q,
             slit_length=setting.slit_length,
             slit_width=setting.slit_width,
+            accuracy=setting.accuracy,
         )
 
     # None or absent: a schema-1 document, written before weighting existed,
@@ -991,6 +1036,18 @@ def read_analysis(
     weighting = document.get('weighting')
     if isinstance(weighting, dict):
         fitter.set_weighting(weighting.get('mode', DEFAULT_WEIGHTING['mode']))
+
+    # Before the Q range, whose point count depends on the selection, and
+    # before the result, whose fit context records it.
+    if isinstance(mask, dict) and fitter._selection is not None:
+        mask = {**mask, 'operations': decode_numbers(mask.get('operations') or [])}
+        problem = fitter._selection.restore(mask, fitter.data)
+        if problem:
+            warnings.warn(
+                f'The saved pixel mask was not applied: {problem}. The configuration is '
+                'restored; any saved fit result is not.',
+                stacklevel=3,
+            )
 
     fit_range = document.get('fit_range')
     if isinstance(fit_range, dict):

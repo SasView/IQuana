@@ -10523,8 +10523,8 @@ packages:
   - numpy>=2.0
   - plotly>=5.0
   - scipy>=1.7
-  - sasmodels>=1.0
-  - sasdata>=0.8
+  - sasmodels>=1.0.12
+  - sasdata>=0.11
   - bumps>=1.0
   - sinccity>=0.2.0,<0.3
   - pytest>=7.0 ; extra == 'dev'

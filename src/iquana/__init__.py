@@ -2,7 +2,7 @@
 SANS Model Fitter - A flexible template for fitting SANS data with SasModels
 """
 
-__version__ = '0.5.0'
+__version__ = '0.6.0'
 
 from . import examples, structure
 from . import inversion as pr_inversion
