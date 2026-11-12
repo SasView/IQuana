@@ -378,7 +378,7 @@ def test_round_trip_restores_the_mode_and_result(noisy, tmp_path):
     path = save(fitter, tmp_path)
 
     document = json.load(open(path, encoding='utf-8'))
-    assert document['schema']['version'] == SCHEMA_VERSION == 2
+    assert document['schema']['version'] == SCHEMA_VERSION >= 2  # weighting since 2
     assert document['weighting'] == {'mode': 'abs'}
 
     restored = IQuana.load_analysis(path, data=noisy)
@@ -494,7 +494,7 @@ def test_csv_export_of_data_without_di_writes_nan(noisy, tmp_path, engine, mode)
     assert '# dI_exp: nan (the dataset has no intensity uncertainties)' in header
     assert any(line.startswith(f'# Weighting mode: {mode}') for line in header)
     assert np.all(np.isnan(columns['dI_exp']))
-    assert len(columns['dI_exp']) == int(get_fit_index(data).sum())
+    assert len(columns['dI_exp']) == int(get_fit_index(fitter.data).sum())
     # The residuals are the stored ones, not a re-derivation through NaN.
     assert np.all(np.isfinite(columns['Residuals']))
     assert np.sum(columns['Residuals'] ** 2) == pytest.approx(fitter._fit_contract.chisq, rel=1e-6)

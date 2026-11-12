@@ -2,6 +2,88 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.0] - 2026-11-12
+
+This release adds 2D data and magnetic (polarised) SANS
+([#21](https://github.com/SasView/IQuana/issues/21)), and the Generic
+Scattering Calculator. 1D analyses behave as before, and analysis files
+written by 0.5 keep their fit results.
+
+### Added
+
+- **2D data.** `load_data()` and `set_data()` accept 2D detector images.
+  `plot_model()` and `plot_results()` draw data, model and residual
+  heatmaps; `fit()`, `fit_bayesian()`, `calculate()`, `save_results()`,
+  `save_analysis()` and `report()` work on them. `set_q_range()` selects an
+  annulus in |Q|. The fitter's `is_2d` property says which kind is loaded.
+- Pixel masks for 2D data: `mask_ring()`, `mask_box()`, `mask_invalid()`,
+  `set_mask()`, `reset_mask()` and `get_mask()`. The selection is fitter
+  state, never written to the dataset's own mask, and is saved with the
+  analysis. The pixel at |Q| = 0 is always excluded.
+- `set_data(data, mask_convention=...)` for 2D objects whose mask uses the
+  other convention.
+- 2D resolution: `'data'` uses the radial and azimuthal widths, `'pinhole'`
+  sets both to `dq_over_q·|Q|`; `set_resolution(..., accuracy=...)` sets the
+  2D oversampling.
+- **Magnetism.** `enable_magnetism(beam=..., efficiency_in=..., efficiency_out=...)`,
+  `supports_magnetism()`, `get_magnetic_parameters()` and
+  `is_magnetism_enabled()` expose sasmodels' magnetic parameters for 2D
+  data, with beam presets for unpolarised, SANSPOL and polarisation-analysis
+  experiments. A fit refuses a polarisation channel whose magnetisation can
+  reach zero (sasmodels switches kernels there) and reports magnetic
+  parameters the model does not respond to.
+- `examples.simulate_2d()`, and the 2D examples `p123_2d`, `sans2d_2d`,
+  `sanspol_plus`, `sanspol_minus` and `sanspol_unpol`.
+- A fit warns when orientation parameters vary on 1D data, where they have no
+  effect.
+- `notebooks/magnetic_2d_fitting.ipynb` and `examples/magnetic_2d_example.py`.
+- **Generic Scattering Calculator.** `iquana.GenericScatteringCalculator` and
+  the `iquana.structure` module expose the
+  [SincCity](https://easyscience.github.io/SincCity/) package: I(q) of atoms
+  (PDB, GRO), pixels (SLD) or mesh cells (VTK) by the Debye formula, a 3D view
+  of the points, contrast series, and a settings record that replays a
+  calculation.
+  - `IQuana.set_data()`, `MultiFitter.add()` and
+    `IQuana.load_analysis(data=...)` accept a `ScatteringProfile` directly.
+  - The fit guard names the weighting and resolution to set for a computed
+    curve.
+  - `set_verbosity()` covers SincCity's messages, and anything that captures
+    the `iquana` logger receives them.
+  - Walkthroughs: `examples/structure_calculator_example.py` and
+    `notebooks/structure_calculator.ipynb`; example structures in
+    `examples/data/`.
+- `save_analysis()` writes the arrays of an in-memory 1D dataset (a
+  `data_ops` result, a simulated or computed curve) into the analysis file, so
+  `load_analysis(path)` reopens it without `data=`. A template
+  (`include_result=False`) embeds no arrays and still needs `data=`, as does
+  an in-memory 2D dataset. The `schema` block also records the SincCity
+  version.
+
+### Changed
+
+- The analysis file schema is version 3. It adds `data.dimension`, a `mask`
+  section, the arrays of an in-memory 1D dataset (`data.arrays`) and, only
+  when used, `configuration.magnetism` and `resolution.accuracy`. Versions 1
+  and 2 load as before, with their results; an IQuana 0.5 refuses a version 3
+  file with its "newer schema" message.
+- `examples.simulate()` rejects magnetic parameters, which it used to accept
+  and silently ignore.
+- `MultiFitter` refuses 2D data with a clear message before adding it.
+- The minimum versions are now `sasmodels>=1.0.12` and `sasdata>=0.11`, the
+  oldest the tests run against.
+- `sinccity` is a required dependency.
+
+### Fixed
+
+- `set_data()` no longer modifies the object it is given. It used to write
+  `qmin`, `qmax` and `mask` onto it, and `set_q_range()` then changed that
+  same object, so fitters given one dataset shared a Q range: a second fitter
+  took the first one's restricted range as its full range, and narrowing
+  either changed both. Each fitter now keeps a shallow copy that shares the
+  arrays but has its own limits and mask. Code that read `qmin`, `qmax` or
+  `mask` back from the object after `set_data()` should read `fitter.data`
+  instead.
+
 ## [0.5.0] - 2026-10-28
 
 This release fixes three silent fitting errors. Fits that use a structure
@@ -26,7 +108,7 @@ factor, the LMFit engine, or polydispersity can give different results from
   Linux, Windows and macOS for release pull requests, every Sunday, and on
   demand. ([#14](https://github.com/SasView/IQuana/pull/14))
 - `simulated_sans_data.csv` and `simulated_sans_data_with_resolution.csv` in
-  the repository root, used by the notebooks and examples.
+  `tests/data`, used by the notebooks and examples.
 
 ### Changed
 

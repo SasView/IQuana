@@ -180,7 +180,7 @@ The goodness-of-fit block means the same thing whichever engine ran:
 | `message` | The optimizer's own termination message |
 | `weighting_note` | How the residuals were weighted, e.g. `'dI'` |
 | `cov`, `cov_labels`, `cov_source` | Covariance over the varied parameters, its parameter order, and where it came from |
-| `on_bounds` | `(parameter, 'min' | 'max')` for each fitted parameter resting on a bound |
+| `on_bounds` | `(parameter, 'min' \| 'max')` for each fitted parameter resting on a bound |
 
 !!! warning "Changed in 0.4"
     `result['chisq']` from the bumps engine was χ²/dof before 0.4; use
@@ -326,9 +326,11 @@ fitter.plot_results()      # the saved result, no refit needed
 The file is JSON, so it is readable, reviewable in a pull request, and safe to
 accept from a collaborator. It records the model expression and its component
 names, every parameter value, bound and vary flag, polydispersity, links, the
-structure factor, the resolution mode and the Q range. It does not record data
-curves or posterior sample chains; the covariance matrix, being small and
-useful, is kept.
+structure factor, the resolution mode and the Q range. It does not record
+fitted curves or posterior sample chains; the covariance matrix, being small
+and useful, is kept. Data from a file is recorded by its path; a dataset given
+with `set_data()` (a `data_ops` result, a simulated or computed curve) has no
+file, so its arrays are written into the analysis.
 
 **Saving and loading guarantee the configuration, not a refit.** A restored
 fitter is identical in setup and produces the same theory, residuals and fit
@@ -357,19 +359,28 @@ restored.
 #### Finding the data again
 
 The path to the data file is recorded twice, relative to the analysis file and
-absolute, so moving both together to another machine still works. Supply
-another dataset with `data=`:
+absolute, so moving both together to another machine still works. An
+in-memory dataset reloads from the arrays stored in the file. Supply another
+dataset with `data=`:
 
 ```python
 # A different sample, same model setup
 fitter = IQuana.load_analysis('silica_35C.json', data='silica_45C.dat')
 
-# An in-memory dataset (required for an analysis saved from set_data)
+# An in-memory dataset or a computed curve in place of the stored one
 fitter = IQuana.load_analysis('difference.json', data=data_ops.subtract(a, b))
 ```
 
+An analysis saved by IQuana 0.5 or earlier (schema version 2) holds no arrays,
+so an in-memory dataset still has to be passed with `data=`.
+
+An analysis of an in-memory dataset contains that dataset: the measured or
+derived intensities are written into the file, so sharing the file shares the
+data.
+
 An analysis saved with `include_result=False` is a template: a configured model
-with no sample-specific outcome, ready to apply to the next dataset.
+with no sample-specific outcome, ready to apply to the next dataset. A template
+never embeds arrays, so loading a template of in-memory data needs `data=`.
 
 !!! note "Custom models"
     By default only models built into sasmodels are loaded. Loading a
@@ -800,6 +811,109 @@ Things to know:
 See `examples/pr_inversion_example.py` and
 `notebooks/pr_inversion_demo.ipynb` for a complete walkthrough.
 
+### Scattering from a Structure (Generic Scattering Calculator)
+
+`GenericScatteringCalculator` computes the orientationally averaged I(q) of a
+real-space structure: atoms from a PDB or GRO file, pixels from an SLD file, or
+the cells of a VTK mesh. It is the [SincCity](https://easyscience.github.io/SincCity/)
+package, the nuclear, 1D part of SasView's *Generic Scattering Calculator*,
+which IQuana installs and re-exports; `iquana.structure` holds the rest of its
+API (`ScatteringProfile`, `Structure`, `load`, the readers and the errors).
+
+```python
+from iquana import GenericScatteringCalculator
+
+gsc = GenericScatteringCalculator()
+gsc.load_structure('particle.sld')     # .pdb, .gro, .sld or .vtk
+gsc.plot_points()                      # SasView's "Draw Points"
+gsc.set_q_grid(3e-4, 0.3, 30)          # optional: SasView's defaults
+gsc.set_params(sld_solvent=6.34)       # optional: 10^-6 Å^-2, D2O here
+profile = gsc.calculate()
+gsc.plot_profile()                     # or gsc.plot_profile(data=fitter.data)
+```
+
+The calculation is the exact Debye sum over all points:
+
+```text
+w_j  = (sld_j - sld_solvent * 1e-6) * volume_j        SLD in Å^-2, volume in Å^3
+D(q) = Σ_j Σ_k w_j w_k sin(q r_jk) / (q r_jk)
+I(q) = scale * 1e8 * D(q) / V_norm + background       1/cm
+```
+
+`sld_solvent` is in 10⁻⁶ Å⁻², like every sasmodels SLD parameter
+(`fit.constrain('d2o.sld_solvent', 6.34)`). SasView's calculator takes Å⁻²
+instead; a value that looks like Å⁻² triggers a warning. The structure's own
+SLDs stay in Å⁻², as the files store them.
+
+**Normalisation.** `V_norm` is the volume of the points that scatter, those
+whose SLD differs from the solvent's. For a particle of pixels or cells in a
+box of solvent, the curve at `scale=1` then equals sasmodels' form factor at
+`scale=1`, so `scale` is a volume fraction. When the solvent exactly matches a
+population of points, those points stop counting, and the curve jumps by the
+volume ratio. The calculation line always prints `V_norm` and the number of
+zero-contrast points, and a population that almost matches triggers a warning.
+For contrast-variation series, set `set_params(normalisation_volume=...)`
+explicitly (`normalisation_volume='auto'` restores the default).
+
+File formats, the four kernels, deuteration, size polydispersity, speed, and
+what to know about PDB volumes in a solvent are covered in the
+[SincCity user guide](https://easyscience.github.io/SincCity/).
+
+**The curve is theory.** It has no dI and no dQ. `set_data()` takes the profile
+directly (or `profile.to_data1d()`), and the data line it prints says what to
+set before fitting:
+
+```python
+fitter = IQuana()
+fitter.set_data(profile)
+fitter.set_weighting('abs')      # σ = |I|, equal relative weight
+fitter.set_resolution('none')
+fitter.set_q_range(qmax=0.1)     # optional: stay below the first minimum
+```
+
+Fitting under the default `'dI'` weighting stops with a message that names
+these two calls. A pixel or cell structure deviates most from its smooth
+counterpart at the form-factor minima, which `'abs'` weighting counts fully, so
+start near the expected size or fit below the first minimum.
+
+**Contrast series.** `calculate_series()` computes one profile per entry and
+runs the pair pass once. `MultiFitter` weights every dataset by its own dI
+(weighting modes for joint fits are issue #87), so give each computed curve
+uncertainties with `to_data1d(dI=...)`:
+
+```python
+profiles = gsc.calculate_series([
+    {'label': 'D2O', 'params': {'sld_solvent': 6.34}},
+    {'label': 'H2O', 'params': {'sld_solvent': -0.56}},
+])
+fit = MultiFitter()
+for p in profiles:
+    fit.add(p.label.lower(), p.to_data1d(dI=0.02 * p.intensity), model='sphere')
+fit.share('radius')
+```
+
+The structure must then be the particle alone: pixels of a solvent box that
+match D₂O start scattering in H₂O.
+
+**Overlays are unsmeared.** `plot_profile(data=...)` draws measured data,
+which is usually resolution-smeared, next to an unsmeared curve.
+
+**Reproducibility.** `save_analysis()` stores a computed curve's arrays and its
+`sinccity:` provenance line, which names the structure file, the first twelve
+characters of its SHA-256, the parameters, the kernel and `V_norm`, so the
+analysis reopens with `load_analysis(path)` alone. The file's `schema` block
+records the SincCity version. To keep the recipe for the curve itself,
+`gsc.get_settings()` returns a JSON record of the file path and SHA-256, the q
+grid, the parameters and the package versions, and
+`GenericScatteringCalculator.from_settings(settings)` rebuilds the calculator,
+warning if the file or the periodictable version changed.
+
+Console messages from the calculator go through IQuana's logger, so
+`iquana.set_verbosity('quiet')` silences them too.
+
+See `examples/structure_calculator_example.py` and
+`notebooks/structure_calculator.ipynb` for a complete walkthrough.
+
 ### Structure Factors
 
 You can combine a form factor with a structure factor to model interacting systems.
@@ -966,6 +1080,173 @@ See `examples/composite_model_example.py` for a complete runnable example.
 For a harder case, four form factors against one dataset, see
 `notebooks/four_form_factors.ipynb` (script version:
 `examples/four_form_factors_example.py`).
+
+## 2D Data
+
+IQuana fits 2D detector images, I(qx, qy), with the same workflow as 1D
+curves. `load_data()` recognises 2D files through sasdata (IGOR/NIST ASCII,
+NXcanSAS HDF5, ...), and `set_data()` accepts a sasdata or sasmodels
+`Data2D` with flat `qx_data`, `qy_data` and `data` arrays.
+
+```python
+from iquana import IQuana, examples
+
+fitter = IQuana()
+fitter.load_data(examples.example_path('p123_2d'))
+fitter.is_2d            # True
+fitter.mask_ring(qmax=0.006)   # beam stop
+fitter.mask_invalid()          # 33 pixels with dI = 0
+
+fitter.set_model('sphere')
+fitter.set_structure_factor('hardsphere')
+fitter.set_param('radius', value=50, min=10, max=200, vary=True)
+fitter.set_param('scale', value=0.05, min=1e-6, max=10, vary=True)
+
+fitter.plot_model()     # data | model | residual maps
+result = fitter.fit()   # bumps or lmfit
+fitter.plot_results()
+```
+
+Everything else works as for 1D data: `set_q_range()` now selects an annulus
+in |Q|, `set_weighting()` writes the chosen σ for every pixel, `calculate()`
+returns one value per pixel (NaN where a pixel is excluded),
+`save_results()` writes the fitted pixels with `Qx` and `Qy` columns, and
+`save_analysis()`/`load_analysis()` and `report()` include the pixel
+selection.
+
+### Selecting pixels
+
+A 2D fit nearly always needs a mask. The selection is held by the fitter, so
+the file's own mask is never rewritten, and it is saved with the analysis:
+
+| Call | Effect |
+|---|---|
+| `mask_ring(qmin=0.0, qmax=0.012)` | exclude pixels with qmin ≤ \|Q\| ≤ qmax |
+| `mask_box(qx=(-0.01, 0.01), qy=None)` | exclude a box (an omitted interval is unbounded) |
+| `mask_invalid()` | exclude pixels whose dI is zero or not finite |
+| `set_mask(array_or_callable)` | replace the user exclusions (`True` = excluded, or `f(qx, qy)`) |
+| `reset_mask()` | drop the user exclusions; the file's mask still applies |
+| `get_mask()` | pixel counts and the exclusion array |
+
+Ring, box and invalid masks add to each other. The pixel at |Q| = 0 is always
+excluded: sasmodels cannot evaluate it reliably. Nothing is masked
+automatically, so data with zero-dI pixels has to be masked (or weighted
+differently) before the bumps engine can fit it; the error message says so.
+
+sasdata's 2D readers mark *included* pixels with `mask = True`, sasmodels the
+*excluded* ones. IQuana reads the convention from the class (sasdata
+`Data2D`: included; anything else: excluded). For a sasdata object whose
+mask `sasmodels.data.load_data()` already flipped, pass
+`set_data(data, mask_convention='exclude')`.
+
+### Resolution on 2D data
+
+| Mode | 2D behaviour |
+|---|---|
+| `'data'` | smear with the file's radial and azimuthal widths (`dqx_data`, `dqy_data`) when both are present; warn and evaluate unsmeared otherwise |
+| `'none'` | unsmeared |
+| `'pinhole'` | radial = azimuthal = `dq_over_q · \|Q\|`, an isotropic approximation |
+| `'slit'` | refused: slit smearing is a 1D geometry |
+
+sasmodels reads `dqx_data` and `dqy_data` as the widths **parallel and
+perpendicular to Q**, not along x and y. 2D smearing oversamples every pixel;
+`set_resolution(..., accuracy='low' | 'med' | 'high' | 'xhigh')` chooses
+12, 30, 60 or 200 evaluations per pixel (default `'low'`). The setting can be
+given at any time and has no effect on 1D data.
+
+### What stays 1D
+
+`compare()`, `plot_posterior_predictive()`, `MultiFitter`, `data_ops` and
+P(r) inversion accept 1D data only and say so. Composite models
+(`set_models()`) still need the bumps engine. Component maps
+(`show_components=True`) are not drawn for 2D data.
+
+### Speed
+
+A detector image has thousands of pixels, and the cost multiplies:
+
+| Configuration (sphere, 31 000 pixels) | Time per evaluation |
+|---|---|
+| unsmeared | about 1 ms |
+| unsmeared, `radius_pd` with 35 points | about 30 ms |
+| magnetic, unpolarised beam, unsmeared | about 16 ms |
+| magnetic, unpolarised, 5 % pinhole, `accuracy='low'` | about 200 ms |
+| the same with `accuracy='high'` | about 3 s |
+
+An `amoeba` fit takes a few hundred evaluations; `fit_bayesian()` takes
+10⁴–10⁵, which can mean hours once smearing or polydispersity is on. Mask the
+beam stop, restrict the |Q| range to where the information is, and start
+unsmeared. Fewer fitted pixels change the likelihood and the uncertainties,
+so treat that as an analysis choice, not a free speed-up.
+
+## Magnetic (Polarised) SANS
+
+sasmodels adds magnetic parameters to every compiled model with an SLD, and
+evaluates them **for 2D data only**. IQuana exposes them when you ask:
+
+```python
+fitter = examples.load_fitter('sanspol_plus')   # S50 nanoparticles, I+ channel
+# ...or by hand:
+fitter.set_model('sphere')
+fitter.supports_magnetism()          # True
+fitter.get_magnetic_parameters()     # ['up_frac_i', 'up_frac_f', 'up_theta', 'up_phi',
+                                     #  'sld_M0', 'sld_mtheta', 'sld_mphi', ...]
+fitter.enable_magnetism(beam='sanspol+', efficiency_in=0.95)
+fitter.set_param('sld_mtheta', value=90)                    # M in the detector plane
+fitter.set_param('sld_M0', value=1.0, min=0.01, max=5, vary=True)
+result = fitter.fit()
+fitter.enable_magnetism(False)       # hides them again; values are remembered
+```
+
+The parameters:
+
+| Parameter | Meaning |
+|---|---|
+| `up_frac_i`, `up_frac_f` | fraction of spin-up neutrons before and after the sample |
+| `up_theta`, `up_phi` | direction of the polarisation axis **P** (degrees) |
+| `<sld>_M0` | magnetic SLD of that region, 10⁻⁶ Å⁻² |
+| `<sld>_mtheta`, `<sld>_mphi` | direction of that region's magnetisation **M** (degrees) |
+
+**Convention.** z is the beam axis and x, y are the detector axes. A
+direction (θ, φ) is (sin θ cos φ, sin θ sin φ, cos θ): θ from the beam, φ
+from +x, for **M** and **P** alike. The defaults put **P** along +x and **M**
+along the beam. This is what the sasmodels code computes; its
+`magnetism.rst` writes **M** differently.
+
+**Beam presets.** `beam=` sets the two spin fractions: `'unpolarised'`
+(0.5 / 0.5), `'sanspol+'` and `'sanspol-'` (polariser, no analyser),
+`'pa++'`, `'pa--'`, `'pa+-'`, `'pa-+'` (full polarisation analysis),
+scaled by `efficiency_in` / `efficiency_out`. Without a preset the sasmodels
+defaults (0 / 0) apply and a fit warns about them.
+
+**Checks before a fit.**
+
+- In channels where the nuclear term is weighted differently from 1 (spin
+  flip, imperfect analysers), a fit whose magnetisation can reach zero is
+  refused. At M0 = 0 sasmodels switches to its non-magnetic kernel, which
+  ignores the polarisation, so the model would jump there. Give a varied
+  `*_M0` a range that excludes zero.
+- A varied magnetic parameter the model does not respond to is reported:
+  `mphi` with **M** along the beam, `up_theta`/`up_phi` with an unpolarised
+  beam, `M0` when **M** is perpendicular to **P** in a non-spin-flip channel, and
+  so on. The non-spin-flip channels only see the part of **M** along **P**.
+- Only the difference of collinear particle and solvent magnetisations
+  matters, just as for nuclear SLDs.
+
+**Lifecycle.** Loading 1D data disables magnetism with a warning and keeps the
+values; loading 2D data again does not re-enable it. Disabling drops links
+that involve magnetic parameters. Magnetic values are saved with an analysis
+while magnetism is enabled. In `set_models()` the magnetic parameters get the
+component prefixes (`small_sld_M0`); `shared=` may name them
+(`shared=['sld_solvent', 'sld_solvent_M0']`), and sharing a nuclear SLD does
+not share its magnetisation.
+
+**Not yet.** Simultaneous fits of several spin channels (`MultiFitter`),
+models with vector SLDs (`core_multi_shell`, `onion`), and the beta
+approximation of structure factors in 2D.
+
+See `notebooks/magnetic_2d_fitting.ipynb` and
+`examples/magnetic_2d_example.py` for a complete walk-through.
 
 ## Polydispersity
 

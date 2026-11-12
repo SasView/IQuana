@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iquana"
-version = "0.5.0"
+version = "0.6.0"
 description = "A flexible template for fitting SANS data with SasModels"
 requires-python = ">=3.10"
 license = {text = "BSD-3-Clause"}
@@ -16,9 +16,10 @@ dependencies = [
     "numpy>=2.0",
     "plotly>=5.0",
     "scipy>=1.7",
-    "sasmodels>=1.0",
-    "sasdata>=0.8",
+    "sasmodels>=1.0.12",
+    "sasdata>=0.11",
     "bumps>=1.0",
+    "sinccity>=0.2.0,<0.3",
 ]
 
 [project.urls]
@@ -76,6 +77,7 @@ pytest = ">=7.0"
 pytest-cov = ">=4.0"
 jupyter = ">=1.0"
 ruff = ">=0.8.0"
+periodictable = ">=1.6"
 
 [tool.pixi.tasks]
 test = "pytest tests/ -v"

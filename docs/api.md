@@ -16,6 +16,13 @@ The main class for SANS data fitting.
       members:
         - load_data
         - set_data
+        - is_2d
+        - mask_ring
+        - mask_box
+        - mask_invalid
+        - set_mask
+        - reset_mask
+        - get_mask
         - set_q_range
         - reset_q_range
         - get_q_range
@@ -59,6 +66,10 @@ The main class for SANS data fitting.
         - is_polydispersity_enabled
         - get_pd_params
         - get_varying_pd_params
+        - supports_magnetism
+        - get_magnetic_parameters
+        - enable_magnetism
+        - is_magnetism_enabled
 
 ### Composite model naming
 
@@ -323,6 +334,21 @@ estimation and D_max exploration.
         - REGULARIZERS
         - SASVIEW_N_REG
 
+## GenericScatteringCalculator and `iquana.structure`
+
+The orientationally averaged I(q) of a real-space structure (PDB, GRO, SLD or
+VTK file) by the exact Debye formula. `iquana.GenericScatteringCalculator` and
+the names in `iquana.structure` are the [SincCity](https://easyscience.github.io/SincCity/)
+package's own objects; its [API reference](https://easyscience.github.io/SincCity/)
+documents them. See [Scattering from a Structure](usage.md#scattering-from-a-structure-generic-scattering-calculator)
+for how a computed curve reaches a fit.
+
+::: iquana.structure
+    options:
+      show_root_heading: true
+      show_source: false
+      members: false
+
 ## examples
 
 Curated example datasets and a simulator for generating data.
@@ -359,7 +385,8 @@ iquana.set_verbosity('info')    # back to the default
 
 Tables you ask for explicitly - `get_params()`, `get_pd_params()`,
 `examples.describe()` - are printed either way; they are the result of the call
-rather than a side effect of it.
+rather than a side effect of it. The Generic Scattering Calculator's messages
+go through the same logger, so `set_verbosity` covers them too.
 
 ::: iquana.console
     options:
@@ -367,6 +394,7 @@ rather than a side effect of it.
       show_source: true
       members:
         - set_verbosity
+        - adopt_logger
 
 ## ParameterManager
 

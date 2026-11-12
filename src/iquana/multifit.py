@@ -419,8 +419,11 @@ class MultiFitter:
             name: Identifier for this dataset. Must match ``[A-Za-z][A-Za-z0-9_]*``
                 and not be a Python keyword, because it appears unquoted on the
                 left of the dot in every reference to one of its parameters.
-            data: A file path, or an in-memory ``Data1D``. The dataset is copied,
-                so later edits to the object passed here do not reach the fit.
+            data: A file path, an in-memory ``Data1D``, or a computed
+                :class:`~iquana.structure.ScatteringProfile`. The dataset is
+                copied, so later edits to the object passed here do not reach
+                the fit. A joint fit weights by dI, so give a computed curve
+                uncertainties with ``profile.to_data1d(dI=...)``.
             model: Model expression, e.g. ``'sphere'`` or ``'sphere@hardsphere'``.
                 May be set later through the handle's ``set_model``.
             dataset: Which entry to take from a file holding several.
@@ -445,6 +448,7 @@ class MultiFitter:
             # Copied at ingestion: a joint analysis holding a reference to a
             # caller's array would silently change meaning when that array did.
             fitter.set_data(copy.deepcopy(data))
+        _reject_2d(name, fitter)
         if model is not None:
             fitter.set_model(model, platform=platform)
 
@@ -489,6 +493,7 @@ class MultiFitter:
             raise ValueError(f"Cannot add '{name}': the fitter has no data loaded.")
         if fitter.kernel is None:
             raise ValueError(f"Cannot add '{name}': the fitter has no model set.")
+        _reject_2d(name, fitter)
         mode = fitter.get_weighting()['mode']
         if mode != 'dI':
             raise ValueError(
@@ -2275,6 +2280,15 @@ class MultiFitter:
 # =========================================================================
 # Module helpers
 # =========================================================================
+
+
+def _reject_2d(name: str, fitter: IQuana) -> None:
+    """Refuse 2D data before it is added: simultaneous 2D fits are not supported yet."""
+    if fitter.is_2d:
+        raise TypeError(
+            f"Cannot add '{name}': MultiFitter supports 1D data only. Fit 2D datasets "
+            'one at a time with IQuana.'
+        )
 
 
 def _kernel_units(kernel: Any) -> dict[str, str]:
