@@ -1145,7 +1145,7 @@ mask `sasmodels.data.load_data()` already flipped, pass
 |---|---|
 | `'data'` | smear with the file's radial and azimuthal widths (`dqx_data`, `dqy_data`) when both are present; warn and evaluate unsmeared otherwise |
 | `'none'` | unsmeared |
-| `'pinhole'` | radial = azimuthal = `dq_over_q · |Q|`, an isotropic approximation |
+| `'pinhole'` | radial = azimuthal = `dq_over_q · \|Q\|`, an isotropic approximation |
 | `'slit'` | refused: slit smearing is a 1D geometry |
 
 sasmodels reads `dqx_data` and `dqy_data` as the widths **parallel and

@@ -147,6 +147,26 @@ def test_a_rejected_beam_changes_nothing(image):
     assert not fitter.is_magnetism_enabled()
 
 
+@pytest.mark.parametrize(
+    'kwargs',
+    [
+        {'efficiency_in': 0.95},
+        {'efficiency_out': 0.9},
+        {'enabled': False, 'efficiency_in': 0.95},
+    ],
+)
+def test_an_efficiency_without_a_beam_is_refused(image, kwargs):
+    """Without beam= there are no fractions to scale; the value must not vanish."""
+    fitter = IQuana()
+    fitter.set_data(image)
+    fitter.set_model('sphere')
+    with pytest.raises(ValueError, match='only together with beam='):
+        fitter.enable_magnetism(**kwargs)
+    assert not fitter.is_magnetism_enabled()
+    fitter.enable_magnetism(efficiency_in=1.0)  # the default is not "given"
+    assert fitter.is_magnetism_enabled()
+
+
 # =============================================================================
 # Physics: convention and channel identities
 # =============================================================================

@@ -5,6 +5,7 @@ This module provides a unified interface for fitting SANS data using different
 optimization engines (BUMPS, LMFit) with any model from the SasModels library.
 """
 
+import copy
 import difflib
 import functools
 import os
@@ -258,9 +259,11 @@ class IQuana:
         dataset is validated and normalized (``qmin``/``qmax``/``mask`` are
         recomputed as needed) so it is fit-ready.
 
-        2D data (a sasdata or sasmodels ``Data2D``) is used as given: its mask
-        is read once into the fitter's pixel selection and never rewritten,
-        so calling ``set_data`` twice on the same object is safe.
+        2D data (a sasdata or sasmodels ``Data2D``) is not modified: the
+        fitter keeps a shallow copy that shares its arrays, and its mask is
+        read once into the fitter's pixel selection and never rewritten. So
+        calling ``set_data`` twice on the same object, or giving one object to
+        several fitters, is safe: each keeps its own Q range and masks.
 
         Args:
             data: A sasdata ``Data1D`` object with populated ``x`` and ``y``
@@ -289,7 +292,10 @@ class IQuana:
             data = data.to_data1d()
         if is_2d(data):
             selection = self._new_selection(data, mask_convention)
-            self.data = data
+            # A shallow copy: it shares the arrays, which IQuana never writes,
+            # but holds its own qmin/qmax, so fitters given the same object
+            # keep independent Q ranges.
+            self.data = copy.copy(data)
             self._adopt_data(selection)
         else:
             self._ingest_1d(data, mask_convention)
@@ -1381,14 +1387,22 @@ class IQuana:
                 defaults (0 / 0, spin-down non-spin-flip) apply, and a fit
                 warns about them.
             efficiency_in: Polariser efficiency, 0.5 to 1 (``'sanspol+'``
-                with 0.95 gives ``up_frac_i = 0.95``).
-            efficiency_out: Analyser efficiency, 0.5 to 1.
+                with 0.95 gives ``up_frac_i = 0.95``). Needs ``beam=``.
+            efficiency_out: Analyser efficiency, 0.5 to 1. Needs ``beam=``.
 
         Raises:
             ValueError: If no model is set, the model has no magnetic
-                parameters, no 2D data is loaded, or the beam or an
-                efficiency is invalid. A rejected call changes nothing.
+                parameters, no 2D data is loaded, the beam or an efficiency
+                is invalid, or an efficiency is given without ``beam=``. A
+                rejected call changes nothing.
         """
+        if beam is None and (efficiency_in != 1.0 or efficiency_out != 1.0):
+            # Without a beam there are no fractions to scale, so the value
+            # would be dropped silently.
+            raise ValueError(
+                'efficiency_in and efficiency_out apply only together with beam=, '
+                "e.g. enable_magnetism(beam='sanspol+', efficiency_in=0.95)."
+            )
         if not enabled:
             if beam is not None:
                 raise ValueError('beam= applies when enabling magnetism.')

@@ -75,6 +75,24 @@ class TestIngestion:
         assert other.get_mask()['fitted'] == 24 * 24
         assert fitted < 24 * 24
 
+    def test_fitters_sharing_one_object_keep_their_own_q_range(self, image):
+        """set_data() must not write qmin/qmax on the caller's 2D object."""
+
+        def q_attrs():  # sasdata's Data2D has no qmin/qmax until one is written
+            return getattr(image, 'qmin', None), getattr(image, 'qmax', None)
+
+        q_before = q_attrs()
+        first = sphere_fitter(image)
+        first.set_q_range(0.05, 0.1)
+        fitted = first.get_mask()['fitted']
+        second = sphere_fitter(image)
+        assert first.get_q_range() == (0.05, 0.1)
+        assert first.get_mask()['fitted'] == fitted < 24 * 24
+        second.set_q_range(0.02, 0.04)
+        assert first.get_q_range() == (0.05, 0.1)
+        assert q_attrs() == q_before
+        assert first.data.data is image.data  # shallow: the arrays are shared
+
     def test_sasmodels_data2d_uses_the_exclusion_convention(self):
         data = empty_data2D(np.linspace(-0.1, 0.1, 10))
         data.mask = np.zeros(100, dtype=bool)
