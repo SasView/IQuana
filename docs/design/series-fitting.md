@@ -79,9 +79,38 @@ Facts from the SasView source (`main`, November 2026) and its fitting help.
 
 ### 2.2 SASfit
 
-*Research in progress; this section is not yet written.*
+Facts from the SASfit source (Tcl GUI code in the GitHub repository). The
+online manual and the J. Appl. Cryst. papers could not be reached from the
+environment this was written in, so nothing here comes from them.
 
-<!-- SASFIT-SECTION -->
+- **Workflow.** *Options > run batch...* in the single-dataset fit window
+  opens a "batch processing" window. The fit window must already be set up,
+  so here too the user fits one curve first. Files are chosen as a directory
+  plus a glob pattern, shown in a list and sorted in natural order
+  (`run_2` before `run_10`). Files can be removed from the list but not
+  reordered.
+- **Start values.** Each file is loaded and the normal "Run fit" button is
+  invoked, so every fit starts from whatever the previous one left behind.
+  Chaining is implicit and cannot be switched off.
+- **Running.** "Do all", or step through with "load next file". A run can be
+  interrupted and continued.
+- **Result.** One CSV per dataset (`<name>_fitresult.csv`) holding the
+  parameters with errors, moments of the size distribution, χ², reduced χ²,
+  R factors and the curves. There is no combined table of parameters against
+  dataset for model fits, and no trend plot.
+- **Series variable.** None. Only a run number and the file name are
+  recorded.
+- **Failures.** Nothing stops or marks a bad fit. An unreadable file raises a
+  dialog and the previous result is saved again under the new name; a fit
+  error is reported and the loop continues from the same parameters.
+- **Model-free series.** The same file-list widget drives a series of
+  Guinier/Porod analyses, and that one does append one row per file (Rg,
+  I(0), Porod constant, invariant and others, each with an error) to a single
+  CSV.
+- **Global fit** is separate (*Calc > multiple data sets*): all datasets are
+  fitted at once, with parameters bound to shared global parameters. Batch is
+  sequential and independent.
+- **Scripting.** None; the batch is driven through the GUI.
 
 ### 2.3 What this design takes from them
 
@@ -90,6 +119,9 @@ Facts from the SasView source (`main`, November 2026) and its fitting help.
 | "Fit one first, then apply to all" is the workflow people already know. | The configured `IQuana` is the template. No separate setup. |
 | Chain fitting is essential for scans but its order is fragile. | Order is defined by the series variable, not by hand. A failed fit is never used as a start. |
 | A batch result without the series variable is only half a result. | The variable is a column of the table and the x axis of every trend plot. |
+| Sorting a file pattern in natural order, as SASfit does, removes most ordering mistakes. | A pattern is sorted for you; only an explicit list keeps the caller's order. |
+| A forced warm start with no failure handling (SASfit) lets one bad fit propagate unseen. | The warm start is the default but optional, skips failed fits, and jumps are flagged. |
+| One result file per dataset (SASfit) leaves the user to build the trend table by hand. | One table, one file. |
 | One bad dataset must not cost the other 999. | Every dataset is isolated; failures become flagged rows. An interrupt returns what is done. |
 | Batch and single fits must give the same numbers. | The loop calls `IQuana.fit()` itself, so there is only one fit path. |
 | Users cannot see what happened to dataset *k*. | Any row can be opened as a normal `IQuana`, with its data, setup and result. |
@@ -631,6 +663,11 @@ series = fitter.fit_series(files, bayesian=True, samples=10000)
 - Handing a finished series to `MultiFitter` as a starting point for a joint
   fit with shared parameters.
 - Dividing the jump step by the spacing of the series variable.
+- Continuing an interrupted series where it stopped, as SASfit can. Today the
+  remaining files can be fitted with a second call.
+- A series of model-free analyses (Guinier, Porod, invariant), once roadmap
+  item 3.2 exists. SASfit has this, and `SeriesResult` is already a table of
+  named values with uncertainties, so it should need no new result class.
 
 ## 11. Order of work
 
