@@ -23,6 +23,8 @@ class TestPublicApi(unittest.TestCase):
             'DatasetHandle',
             'MultiFitResult',
             'MultiFitReport',
+            'SeriesResult',
+            'SeriesRow',
             'ConstraintError',
             'ExpressionError',
             'ParameterManager',

@@ -8,11 +8,12 @@ optimization engines (BUMPS, LMFit) with any model from the SasModels library.
 import copy
 import difflib
 import functools
+import logging
 import os
 import re
 import warnings
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from plotly.graph_objects import Figure
@@ -78,6 +79,9 @@ from .results import (
     resolve_fit_index,
     save_fit_result,
 )
+
+if TYPE_CHECKING:
+    from .series_results import SeriesResult
 
 
 def get_all_models() -> list[str]:
@@ -156,6 +160,12 @@ LMFIT_AVAILABLE = SCIPY_AVAILABLE
 if not LMFIT_AVAILABLE:
     warnings.warn('scipy not available. Only bumps engine will work.', stacklevel=2)
 
+#: How the post-fit warnings about bounds and convergence begin. Named so a
+#: caller that reports these conditions itself (a series fit flags them per
+#: row) can tell them from other warnings without a second copy of the text.
+BOUND_WARNING = 'Fitted parameter(s) at a bound:'
+CONVERGENCE_WARNING = 'The optimizer did not report convergence:'
+
 
 class IQuana:
     """
@@ -192,6 +202,11 @@ class IQuana:
         self._fit_contract: FitResultContract | None = None
         self._fitted_model = None
         self._full_q_range: tuple[float, float] | None = None
+        # The (qmin, qmax) given to the last successful set_q_range(), None for
+        # an end that was not given. The resolved range lives on the dataset;
+        # this is what the user asked for, so a saved analysis or a series can
+        # replay it on another dataset and an open end stays open.
+        self._q_range_request: tuple[float | None, float | None] | None = None
         # 2D data only: which pixels the fit excludes. Fitter state, so the
         # caller's mask is never rewritten (see data/selection.py).
         self._selection: Selection | None = None
@@ -365,6 +380,7 @@ class IQuana:
     def _adopt_data(self, selection: Selection | None) -> None:
         """Finish ingesting ``self.data``: selection, full Q range, magnetism."""
         self._selection = selection
+        self._q_range_request = None
         if selection is not None:
             # The |Q| extent of the usable pixels; sasmodels' own Data2D
             # defaults (1e-16, inf) would make set_q_range() meaningless.
@@ -564,9 +580,7 @@ class IQuana:
         if qmin is None and qmax is None:
             raise ValueError('Provide qmin, qmax, or both.')
 
-        full_min, full_max = self._full_q_range
-        new_qmin = full_min if qmin is None else float(qmin)
-        new_qmax = full_max if qmax is None else float(qmax)
+        new_qmin, new_qmax = self._resolve_q_request(qmin, qmax)
         if new_qmin >= new_qmax:
             raise ValueError(f'qmin ({new_qmin:g}) must be smaller than qmax ({new_qmax:g}).')
 
@@ -581,6 +595,10 @@ class IQuana:
             raise ValueError(
                 f'No data points in Q range [{new_qmin:g}, {new_qmax:g}]. Range unchanged.'
             )
+        self._q_range_request = (
+            None if qmin is None else float(qmin),
+            None if qmax is None else float(qmax),
+        )
 
         logger.info(
             f'{OK} Q range for fitting: {new_qmin:.6g} to {new_qmax:.6g} {INVERSE_ANGSTROM}\n'
@@ -598,6 +616,7 @@ class IQuana:
             raise ValueError('No data loaded. Use load_data() first.')
 
         self.data.qmin, self.data.qmax = self._full_q_range
+        self._q_range_request = None
         n_points = int(self._fit_index().sum())
         logger.info(
             f'{OK} Q range reset to {self.data.qmin:.6g} to {self.data.qmax:.6g} '
@@ -614,6 +633,14 @@ class IQuana:
         if self.data is None:
             return None
         return (self.data.qmin, self.data.qmax)
+
+    def _resolve_q_request(self, qmin: float | None, qmax: float | None) -> tuple[float, float]:
+        """The range a Q request selects on the loaded data: an open end is the data's own."""
+        full_min, full_max = self._full_q_range
+        return (
+            full_min if qmin is None else float(qmin),
+            full_max if qmax is None else float(qmax),
+        )
 
     def set_resolution(
         self,
@@ -1491,12 +1518,15 @@ class IQuana:
         self.fit_result = self._fit_contract.to_legacy_dict()
         self._fitted_model = engine_output.runtime_model
 
-        logger.info(f'\n{OK} Fit completed!\n{self.get_fit_report()}')
+        # Built only when it will be shown: rendering the report is not free,
+        # and a series fit (or set_verbosity('quiet')) would pay for it N times.
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f'\n{OK} Fit completed!\n{self.get_fit_report()}')
 
         self._warn_about_bounds(self._fit_contract.on_bounds)
         if self._fit_contract.converged is False:
             warnings.warn(
-                f'The optimizer did not report convergence: {self._fit_contract.message}. '
+                f'{CONVERGENCE_WARNING} {self._fit_contract.message}. '
                 'The reported parameters are wherever it stopped; increase the '
                 'iteration budget or revisit the starting values.',
                 stacklevel=3,
@@ -1553,7 +1583,7 @@ class IQuana:
             for name, side in on_bounds
         )
         warnings.warn(
-            f'Fitted parameter(s) at a bound: {hits}. The estimate may be constrained '
+            f'{BOUND_WARNING} {hits}. The estimate may be constrained '
             'by these limits; review or widen the bounds if the boundary was not '
             'intentional. Uncertainties from a symmetric covariance estimate are '
             'unreliable at an active bound.',
@@ -1819,13 +1849,7 @@ class IQuana:
         """
         self._require_data()
         self._require_model()
-
-        if engine not in ('bumps', 'lmfit'):
-            raise ValueError(f"Unknown engine '{engine}'. Use 'bumps' or 'lmfit'.")
-
-        self._check_composite_engine_support(engine)
-        self._check_start_values()
-        self._check_scale_degeneracy()
+        self._check_fit_setup(engine)
         # Built once: the guard inspects exactly the σ the engine will divide by.
         evaluation_data = self._evaluation_data()
         self._check_fit_uncertainties(engine, evaluation_data)
@@ -1834,9 +1858,43 @@ class IQuana:
 
         if engine == 'bumps':
             return self._fit_bumps(evaluation_data, method or DEFAULT_BUMPS_METHOD, **kwargs)
-        if not LMFIT_AVAILABLE:
-            raise ValueError("scipy is not installed. Use 'bumps' engine or install scipy.")
         return self._fit_lmfit(evaluation_data, method or 'least_squares', **kwargs)
+
+    def _check_fit_setup(self, engine: str) -> None:
+        """The checks of :meth:`fit` that do not need data.
+
+        Shared with :meth:`fit_series`, which runs them once on the template
+        before any dataset is touched, so a mistake in the setup costs no fits
+        and the two entry points cannot drift apart.
+
+        Raises:
+            ValueError: Unknown engine, scipy missing for ``'lmfit'``, nothing
+                free to fit, or a start value outside its bounds.
+            NotImplementedError: A composite model with an engine other than
+                ``'bumps'``.
+        """
+        if engine not in ('bumps', 'lmfit'):
+            raise ValueError(f"Unknown engine '{engine}'. Use 'bumps' or 'lmfit'.")
+        if engine == 'lmfit' and not LMFIT_AVAILABLE:
+            raise ValueError("scipy is not installed. Use 'bumps' engine or install scipy.")
+        self._check_composite_engine_support(engine)
+        self._check_free_parameters()
+        self._check_start_values()
+        self._check_scale_degeneracy()
+
+    def _check_free_parameters(self) -> None:
+        """Refuse a fit with nothing to vary.
+
+        Counts what the engines count: varied parameters that are not link
+        followers, plus active polydispersity widths. Without this an all-fixed
+        model fails inside bumps with ``max() iterable argument is empty``.
+        """
+        if not self._param_manager.free_parameter_names():
+            raise ValueError(
+                'No parameter is free to vary, so there is nothing to fit. Set '
+                'vary=True on at least one: set_param(name, vary=True), or '
+                'set_pd_param(name, ..., vary=True) for a polydispersity width.'
+            )
 
     def _log_active_resolution(self) -> None:
         """Report the resolution and weighting a fit is about to use.
@@ -2380,6 +2438,22 @@ class IQuana:
     # Theory preview (model evaluation without fitting)
     # =========================================================================
 
+    def _copy_setup(self) -> 'IQuana':
+        """A new fitter with this one's setup and current values: no data, no result.
+
+        The kernel is shared, deliberately: a sasmodels KernelModel is a
+        compiled model definition, not evaluation state (see
+        ``MultiFitter.add_fitter``). The resolution and weighting settings are
+        frozen dataclasses and are shared too. The parameter manager is copied,
+        so a fit on the copy cannot move this fitter's values.
+        """
+        twin = IQuana()
+        twin.kernel = self.kernel
+        twin._param_manager = copy.deepcopy(self._param_manager)
+        twin._resolution = self._resolution
+        twin._weighting = self._weighting
+        return twin
+
     def _require_data(self) -> None:
         if self.data is None:
             raise ValueError('No data loaded. Use load_data() first.')
@@ -2678,6 +2752,84 @@ class IQuana:
             show_components=show_components,
             evaluation_data=None if self.data is None else self._evaluation_data(warn=False),
             weighting_mode=weighting_mode,
+        )
+
+    def fit_series(
+        self,
+        data: Any,
+        *,
+        values: Sequence[float] | str | None = None,
+        variable: str | None = None,
+        order: Literal['value', 'name'] | None = None,
+        start: Literal['previous', 'template'] = 'previous',
+        engine: Literal['bumps', 'lmfit'] = 'bumps',
+        method: str | None = None,
+        **kwargs: Any,
+    ) -> 'SeriesResult':
+        """
+        Fit many datasets with this fitter's setup, one independent fit each.
+
+        This fitter is the template: model, parameters, bounds, links,
+        polydispersity, structure factor, resolution, weighting and Q cut reach
+        every dataset, because each one is fitted by :meth:`fit` on a fresh copy
+        of it. This fitter itself is not changed. Set it up, and usually fit one
+        dataset first, then::
+
+            series = fitter.fit_series('scan/T_{temperature}K.dat')
+            series.plot('radius')
+            series.flagged()
+
+        See ``docs/series.md`` for the whole workflow.
+
+        Args:
+            data: Which datasets. An existing file path (one row); a pattern
+                with ``*`` and at most one ``{name}`` placeholder that reads a
+                number from each file name (``?`` and ``[`` are literal); or a
+                list of paths and in-memory datasets, fitted in the order given.
+            values: The series value of each dataset, when the file name does
+                not hold it: a list of numbers (only with a list of datasets),
+                or a dotted metadata path read from each file, such as
+                ``'sample.temperature'``. Without any value the variable is
+                ``index``.
+            variable: Name of the series variable, overriding the derived one
+                (the placeholder name, the last segment of a metadata path,
+                ``'value'`` for a list). It names a table column, so it must be
+                a Python identifier.
+            order: Pattern only. ``'value'`` sorts by the series value (the
+                default when there is one); ``'name'`` is natural file-name
+                order, which a hysteresis loop or a cool-then-heat scan needs.
+            start: ``'previous'`` starts each fit from the last usable row's
+                fitted values; ``'template'`` starts every fit from this
+                fitter's values. Bounds and vary flags always come from here.
+            engine: As for :meth:`fit`.
+            method: As for :meth:`fit`.
+            **kwargs: Passed to :meth:`fit` for every dataset.
+
+        Returns:
+            A :class:`~iquana.series_results.SeriesResult`: the table of parameters
+            against the variable, with flags, plots, drill-down into any row
+            and save/load.
+
+        Raises:
+            ValueError: Before any fit, for a mistake in the call or the setup:
+                no model, nothing free to fit, no dataset found, a bad
+                placeholder match, values of the wrong length or from two
+                sources, duplicate labels, an invalid variable name, or 2D
+                template data. A problem with one dataset never raises; it
+                becomes a failed row.
+        """
+        from .series import fit_series
+
+        return fit_series(
+            self,
+            data,
+            values=values,
+            variable=variable,
+            order=order,
+            start=start,
+            engine=engine,
+            method=method,
+            **kwargs,
         )
 
     def save_results(self, filename: str) -> None:

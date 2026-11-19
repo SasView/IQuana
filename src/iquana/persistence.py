@@ -45,6 +45,9 @@ from .report import json_safe
 from .results import FitArtifacts, FitResultContract, PosteriorDigest
 
 SCHEMA_FORMAT = 'iquana-analysis'
+#: The format of a series file (see :mod:`iquana.series_results`), which wraps one
+#: analysis document per dataset.
+SERIES_FORMAT = 'iquana-series'
 # Version 2 (#72 item 3) fills the 'weighting' key that version 1 reserved,
 # and records the weighting in each fit context. Version 1 documents read as
 # 'dI', the only weighting that existed when they were written.
@@ -68,6 +71,12 @@ CHISQ_TOLERANCE = 1e-6
 
 #: The strings ``_arrays_section`` writes for non-finite array entries.
 _NON_FINITE_TOKENS = ('nan', 'inf', '-inf')
+
+#: What a file of each known format is, and which call reads it.
+_LOADER_FOR_FORMAT = {
+    SCHEMA_FORMAT: 'a single analysis file. Use IQuana.load_analysis().',
+    SERIES_FORMAT: 'a series file. Use SeriesResult.load_analysis().',
+}
 
 _POSITIVE_INFINITY = 'Infinity'
 _NEGATIVE_INFINITY = '-Infinity'
@@ -427,7 +436,7 @@ def _relative_path(target: str, analysis_path: str) -> str | None:
 
 
 def _data_section(
-    source: DataSource, data: Any, analysis_path: str, *, include_arrays: bool = True
+    source: DataSource, data: Any, analysis_path: str | None, *, include_arrays: bool = True
 ) -> dict[str, Any]:
     """The 'data' section for *source*.
 
@@ -449,7 +458,9 @@ def _data_section(
         section['arrays'] = _arrays_section(data)
     if source.kind == 'file':
         section['path_absolute'] = source.path
-        section['path_relative'] = _relative_path(source.path or '', analysis_path)
+        section['path_relative'] = (
+            None if analysis_path is None else _relative_path(source.path or '', analysis_path)
+        )
         section['dataset'] = source.dataset_requested
         section['dataset_index'] = source.dataset_index
         section['n_datasets'] = source.n_datasets
@@ -556,9 +567,15 @@ def _dataset_from_section(section: dict[str, Any]) -> Any:
 
 
 def build_analysis_dict(
-    fitter: Any, analysis_path: str, *, include_result: bool = True
+    fitter: Any, analysis_path: str | None, *, include_result: bool = True
 ) -> dict[str, Any]:
-    """Assemble the analysis document for *fitter*."""
+    """Assemble the analysis document for *fitter*.
+
+    *analysis_path* is where the document will be written, for the data file's
+    relative path. None when that is not known yet (a series row, built during
+    the run): the relative path is then left out, and written when the series
+    is saved (:func:`relocate_data_section`).
+    """
     if fitter.kernel is None:
         raise AnalysisFileError('No model to save. Use set_model() or set_models() first.')
 
@@ -616,9 +633,25 @@ def _package_version(name: str) -> str | None:
 
 
 def _fit_range_section(fitter: Any) -> dict[str, Any] | None:
-    """The restricted Q range, or None when the full range is in use."""
+    """The restricted Q range as the user asked for it, or None for the full range.
+
+    The request is written rather than the resolved range, so an end the user
+    left open stays ``null`` and resolves against whatever data the analysis
+    is reloaded with. ``set_q_range(qmin=0.03)`` on data ending at 0.20 must
+    not become a hard ``qmax = 0.2`` that silently cuts a wider dataset given
+    with ``data=``. The reader already passes ``null`` through to
+    ``set_q_range()``.
+
+    A range set without ``set_q_range()`` (MultiFitter's owned copies assign
+    it directly) has no request, or one that no longer resolves to it; such a
+    range is written as the two numbers in force, as before.
+    """
     if fitter.data is None or fitter._full_q_range is None:
         return None
+    request = fitter._q_range_request
+    if request is not None and fitter._resolve_q_request(*request) == fitter.get_q_range():
+        # Through the codec: a typed end may be infinite, which strict JSON rejects.
+        return encode_numbers({'qmin': request[0], 'qmax': request[1]}, 'fit_range')
     qmin, qmax = fitter.get_q_range()
     full_min, full_max = fitter._full_q_range
     if qmin == full_min and qmax == full_max:
@@ -673,42 +706,68 @@ def _require(condition: bool, path: str, message: str) -> None:
         raise AnalysisFileError(f'Analysis file: {path} {message}.')
 
 
-def read_document(filename: str) -> dict[str, Any]:
-    """Load and validate the envelope of an analysis file."""
+def read_json(filename: str, what: str = 'Analysis file') -> Any:
+    """Parse *filename* as strict JSON: the bare ``NaN``/``Infinity`` constants are refused."""
     if not os.path.isfile(filename):
-        raise AnalysisFileError(f'Analysis file not found: {os.path.abspath(filename)}')
+        raise AnalysisFileError(f'{what} not found: {os.path.abspath(filename)}')
     try:
         with open(filename, encoding='utf-8') as handle:
-            document = json.load(handle, parse_constant=_reject_constant)
+            return json.load(handle, parse_constant=_reject_constant)
     except json.JSONDecodeError as exc:
-        raise AnalysisFileError(f'Analysis file is not valid JSON: {exc}') from exc
+        raise AnalysisFileError(f'{what} is not valid JSON: {exc}') from exc
 
-    _require(isinstance(document, dict), 'the document', 'must be a JSON object')
-    schema = document.get('schema')
-    _require(isinstance(schema, dict), 'schema', 'is required and must be a mapping')
+
+def check_schema(
+    document: Any,
+    expected: str,
+    current: int,
+    supported: tuple[int, ...],
+    prefix: str = '',
+) -> None:
+    """Validate the ``schema`` envelope shared by analysis and series files.
+
+    *prefix* locates a nested document in the messages (``'rows[3].analysis.'``),
+    so a row of a series file is held to exactly the rules of a file of its own.
+    A document of the other known format names the loader that reads it.
+    """
     _require(
-        schema.get('format') == SCHEMA_FORMAT,
-        'schema.format',
-        f'must be {SCHEMA_FORMAT!r}, got {schema.get("format")!r}',
+        isinstance(document, dict), prefix.rstrip('.') or 'the document', 'must be a JSON object'
     )
+    schema = document.get('schema')
+    _require(isinstance(schema, dict), f'{prefix}schema', 'is required and must be a mapping')
+    found = schema.get('format')
+    if found != expected and found in _LOADER_FOR_FORMAT:
+        raise AnalysisFileError(f'This is {_LOADER_FOR_FORMAT[found]}')
+    _require(found == expected, f'{prefix}schema.format', f'must be {expected!r}, got {found!r}')
     version = schema.get('version')
     _require(
         isinstance(version, int) and not isinstance(version, bool),
-        'schema.version',
+        f'{prefix}schema.version',
         'must be an integer',
     )
-    if version > SCHEMA_VERSION:
+    if version > current:
         raise AnalysisFileError(
-            f'Analysis file: schema.version {version} was written by a newer '
-            f'IQuana than this one (which supports {SCHEMA_VERSION}). Upgrade to read it.'
+            f'Analysis file: {prefix}schema.version {version} was written by a newer '
+            f'IQuana than this one (which supports {current}). Upgrade to read it.'
         )
     _require(
-        version in SUPPORTED_VERSIONS,
-        'schema.version',
+        version in supported,
+        f'{prefix}schema.version',
         f'{version} is not one this version can migrate from (supported: '
-        f'{", ".join(str(v) for v in SUPPORTED_VERSIONS)})',
+        f'{", ".join(str(v) for v in supported)})',
     )
-    _require('configuration' in document, 'configuration', 'section is required')
+
+
+def check_analysis_document(document: Any, prefix: str = '') -> None:
+    """Validate the envelope of one single-analysis document."""
+    check_schema(document, SCHEMA_FORMAT, SCHEMA_VERSION, SUPPORTED_VERSIONS, prefix)
+    _require('configuration' in document, f'{prefix}configuration', 'section is required')
+
+
+def read_document(filename: str) -> dict[str, Any]:
+    """Load and validate the envelope of an analysis file."""
+    document = read_json(filename)
+    check_analysis_document(document)
     return document
 
 
@@ -719,15 +778,59 @@ def _reject_constant(token: str) -> Any:
     )
 
 
+def _locate_data_file(
+    section: dict[str, Any], filename: str | None
+) -> tuple[str | None, list[str]]:
+    """Find the data file of a ``'file'`` data section: ``(path or None, paths tried)``.
+
+    Relative to the analysis file *filename* first, so an analysis that travelled
+    with its data finds it, then at the recorded absolute path. *filename* is
+    None for a document that was never written (a series row built in this
+    session), which has no relative path to try.
+    """
+    tried: list[str] = []
+    relative = section.get('path_relative')
+    if relative and filename is not None:
+        base = os.path.dirname(os.path.abspath(filename))
+        candidate = os.path.normpath(os.path.join(base, relative))
+        tried.append(candidate)
+        if os.path.isfile(candidate):
+            return candidate, tried
+    absolute = section.get('path_absolute')
+    if absolute:
+        tried.append(absolute)
+        if os.path.isfile(absolute):
+            return absolute, tried
+    return None, tried
+
+
+def relocate_data_section(
+    section: dict[str, Any] | None, loaded_from: str | None, save_to: str
+) -> dict[str, Any] | None:
+    """A data section with its paths rewritten for a document saved at *save_to*.
+
+    The file is found the way the reader finds it (relative to *loaded_from*,
+    the file the section was read from, then the absolute path), and both paths
+    are written for where it is now. So a series moved together with its data
+    and saved again elsewhere still points at the data. A section that is not
+    file-backed, or whose file cannot be found, keeps its absolute path.
+    """
+    if not isinstance(section, dict) or section.get('source') != 'file':
+        return section
+    found, _tried = _locate_data_file(section, loaded_from)
+    path = found or section.get('path_absolute') or ''
+    return {**section, 'path_absolute': path, 'path_relative': _relative_path(path, save_to)}
+
+
 def resolve_data(
-    document: dict[str, Any], filename: str, data: Any = None
+    document: dict[str, Any], filename: str | None, data: Any = None
 ) -> tuple[Any, str | int | None]:
     """Decide which dataset to load, returning ``(source, dataset_selector)``.
 
     *source* is a path to load, an in-memory dataset to adopt, or None when the
     caller must supply one. An explicit *data* wins outright: it was requested,
     so it fails as the requested override rather than falling back silently to
-    a different sample.
+    a different sample. *filename* is where the document was read from, or None.
     """
     section = document.get('data')
     if data is not None:
@@ -760,19 +863,9 @@ def resolve_data(
             f'It was: {detail}'
         )
 
-    tried: list[str] = []
-    base = os.path.dirname(os.path.abspath(filename))
-    relative = section.get('path_relative')
-    if relative:
-        candidate = os.path.normpath(os.path.join(base, relative))
-        tried.append(candidate)
-        if os.path.isfile(candidate):
-            return candidate, section.get('dataset', 0)
-    absolute = section.get('path_absolute')
-    if absolute:
-        tried.append(absolute)
-        if os.path.isfile(absolute):
-            return absolute, section.get('dataset', 0)
+    found, tried = _locate_data_file(section, filename)
+    if found is not None:
+        return found, section.get('dataset', 0)
     raise AnalysisFileError(
         'Could not find the data file for this analysis. Tried: '
         + '; '.join(tried or ['no path recorded'])
@@ -995,6 +1088,28 @@ def read_analysis(
     a circular import with :mod:`iquana.fitter`.
     """
     document = read_document(filename)
+    fitter = fitter_from_document(
+        fitter_cls, document, filename, data=data, allow_custom_models=allow_custom_models
+    )
+    logger.info(f'{OK} Analysis loaded from {filename}')
+    return fitter
+
+
+def fitter_from_document(
+    fitter_cls: type,
+    document: dict[str, Any],
+    filename: str | None = None,
+    *,
+    data: Any = None,
+    allow_custom_models: bool = False,
+) -> Any:
+    """Build a configured fitter from an analysis *document* whose envelope is checked.
+
+    The part of :func:`read_analysis` after the file is read, so a document held
+    in memory (a row of a series) opens exactly as a file of its own does.
+    *filename* is where the document was read from, for relative data paths;
+    None for a document that was never written.
+    """
     fitter = fitter_cls()
 
     source, selector = resolve_data(document, filename, data)
@@ -1056,5 +1171,4 @@ def read_analysis(
     omitted = restore_result(fitter, document)
     if omitted:
         logger.info(f'  Fit result not restored: {omitted}.')
-    logger.info(f'{OK} Analysis loaded from {filename}')
     return fitter

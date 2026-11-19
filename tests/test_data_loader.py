@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 import warnings
 
@@ -35,6 +36,17 @@ class TestDataLoading(unittest.TestCase):
     def test_load_data_file_not_found(self):
         with self.assertRaises(ValueError):
             self.fitter.load_data('nonexistent_file.csv')
+
+    def test_unreadable_text_file_is_a_value_error_naming_the_file(self):
+        """sasdata 'loads' any text file with None columns; that must not reach numpy."""
+        for content in ('', 'not data\n', '# truncated\n'):
+            with tempfile.NamedTemporaryFile('w', suffix='.dat', delete=False) as handle:
+                handle.write(content)
+            try:
+                with self.assertRaisesRegex(ValueError, 'no data points could be read'):
+                    self.fitter.load_data(handle.name)
+            finally:
+                os.unlink(handle.name)
 
     def test_load_data_sets_mask(self):
         data_file = create_loading_test_data_file()

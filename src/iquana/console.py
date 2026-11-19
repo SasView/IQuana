@@ -29,6 +29,8 @@ and printing them there raises ``UnicodeEncodeError``.
 
 import logging
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 LOGGER_NAME = 'iquana'
@@ -92,6 +94,23 @@ def set_verbosity(level: int | str = 'info') -> None:
     logger.setLevel(level)
 
 
+@contextmanager
+def raised_level(level: int = logging.WARNING) -> Iterator[None]:
+    """Raise the logger's level to at least *level* for a block, then restore it.
+
+    For a caller that runs many silent steps and reports on them itself (a
+    series fit silences each single fit's report). It never lowers the level,
+    so a user's ``set_verbosity('quiet')`` or ``logging.CRITICAL`` stays in
+    force, and the previous level comes back on every exit path.
+    """
+    previous = logger.level
+    logger.setLevel(max(previous, level))
+    try:
+        yield
+    finally:
+        logger.setLevel(previous)
+
+
 class _ForwardedHandler(logging.Handler):
     """Hand another package's records to IQuana's logger, under IQuana's level."""
 
@@ -140,6 +159,10 @@ ARROW = _glyph('→', '->')
 INVERSE_ANGSTROM = _glyph('Å⁻¹', '1/Ang')
 #: Goodness-of-fit symbol.
 CHI_SQUARED = _glyph('χ²', 'chi^2')
+#: Separates an estimate from its uncertainty.
+PLUS_MINUS = _glyph('±', '+/-')
+#: Reduced goodness of fit (χ²/dof), for compact table headers.
+REDUCED_CHI_SQUARED = _glyph('χ²ᵣ', 'chi2r')
 #: Gaussian 1-sigma, used for resolution widths (σ_q/q).
 SIGMA = _glyph('σ', 'sigma')
 #: Separator between fields of a one-line report header.

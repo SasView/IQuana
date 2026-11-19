@@ -538,11 +538,19 @@ def test_missing_parameter_is_an_error(fitter, tmp_path):
         IQuana.load_analysis(path)
 
 
-def test_value_outside_bounds_is_rejected(fitter, tmp_path):
+def test_value_outside_bounds_loads_with_a_warning(fitter, tmp_path):
+    """A leastsq fit can end outside its bounds; the state it saved must reopen.
+
+    The value is restored as saved (never clamped), and fit() still refuses to
+    start from it with its own message.
+    """
     _, path = round_trip(fitter, tmp_path)
     _corrupt(path, lambda d: d['configuration']['params']['radius'].update(value=5000.0))
-    with pytest.raises(AnalysisFileError, match='outside its bounds'):
-        IQuana.load_analysis(path)
+    with pytest.warns(UserWarning, match='outside its bounds'):
+        loaded = IQuana.load_analysis(path)
+    assert loaded.params['radius']['value'] == 5000.0
+    with pytest.raises(ValueError, match='Starting value outside its bounds'):
+        loaded.fit()
 
 
 def test_inverted_bounds_are_rejected(fitter, tmp_path):

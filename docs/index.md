@@ -15,6 +15,7 @@ IQuana provides a unified interface for analysing and fitting SANS data using di
 - **Flexible Data Loading**: Reads CSV, XML, and HDF5 formats via sasdata
 - **User-Friendly Parameter Management**: Easy-to-use interface for setting parameter values, bounds, and fitting flags
 - **Comprehensive Visualization**: Automatic plotting of data, fitted model, and residuals
+- **Series Fitting**: Fit a whole temperature scan, kinetic run or concentration series with one configured fitter, and get the parameters against the series variable (see [Series Fitting](series.md))
 - **Result Export**: Save fitted parameters and curves to CSV files
 - **Scattering from a Structure**: I(q) of a PDB, GRO, SLD or VTK structure by the exact Debye formula, with a 3D view of its points, handed straight to a fit (see [Scattering from a Structure](usage.md#scattering-from-a-structure-generic-scattering-calculator) and the `notebooks/structure_calculator.ipynb` walkthrough)
 
