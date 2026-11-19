@@ -12,7 +12,6 @@ values, runs the fits and reports progress. What it returns, a
 """
 
 import glob
-import json
 import keyword
 import logging
 import os
@@ -24,7 +23,7 @@ import warnings
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .console import MIDDLE_DOT, OK, REDUCED_CHI_SQUARED, logger, raised_level
@@ -156,7 +155,9 @@ def _compile_pattern(pattern: str) -> tuple[re.Pattern[str], str, str | None]:
     """A matcher, a glob and the placeholder name for *pattern*.
 
     Only ``*`` and one ``{name}`` are special; every other character, ``?`` and
-    ``[`` included, is literal. ``*`` does not cross a directory separator.
+    ``[`` included, is literal. ``*`` does not cross a directory separator, and
+    ``**`` is the same as ``*`` (there is no recursive search). In the matcher
+    ``*`` is lazy, so ``T_*{t}K`` reads 300 from ``T_ab300K``, not 0.
     """
     normalized = os.path.normpath(os.path.abspath(pattern))
     names = _PLACEHOLDER.findall(normalized)
@@ -168,7 +169,7 @@ def _compile_pattern(pattern: str) -> tuple[re.Pattern[str], str, str | None]:
     for token in _PATTERN_TOKEN.split(normalized):
         if token == '*':
             finder.append('*')
-            matcher.append(r'[^\\/]*')
+            matcher.append(r'[^\\/]*?')
         elif _PLACEHOLDER.fullmatch(token):
             finder.append('*')
             matcher.append(f'(?P<value>{_NUMBER})')
@@ -185,7 +186,13 @@ def _number_in_name(matcher: re.Pattern[str], path: str, placeholder: str) -> fl
             f'{os.path.basename(path)} matches the pattern but has no number where '
             f'{{{placeholder}}} is. Rename it, or remove it from the directory.'
         )
-    return float(match.group('value'))
+    value = _finite(match.group('value'))
+    if value is None:
+        raise ValueError(
+            f'{os.path.basename(path)}: {match.group("value")!r} where {{{placeholder}}} is '
+            'is not a finite number.'
+        )
+    return value
 
 
 def _number_list(values: Any, count: int) -> list[float]:
@@ -229,9 +236,17 @@ def _metadata_values(sources: list[Any], labels: list[str], path: str) -> tuple[
         raise ValueError(
             f"values={path!r} is not a dotted metadata path such as 'sample.temperature'."
         )
-    numbers, units = [], set()
+    numbers, units, unitless = [], set(), 0
     for source, label in zip(sources, labels, strict=True):
-        dataset = load_sans_dataset(source).data if isinstance(source, str) else source
+        try:
+            dataset = load_sans_dataset(source).data if isinstance(source, str) else source
+        except ValueError as exc:
+            # Unlike a fit failure this cannot become a failed row: without its
+            # value the file has no place in the series.
+            raise ValueError(
+                f'{exc}\n  Reading the series value needs every file. Remove the broken one, '
+                'or pass the files as a list with values=[...].'
+            ) from exc
         raw = _lookup(dataset, segments)
         number = _finite(_scalar(raw))
         if number is None:
@@ -244,14 +259,17 @@ def _metadata_values(sources: list[Any], labels: list[str], path: str) -> tuple[
         unit = _lookup(dataset, [*segments[:-1], f'{segments[-1]}_unit'])
         if isinstance(unit, str) and unit.strip():
             units.add(unit.strip())
+        else:
+            unitless += 1
     if len(units) > 1:
         raise ValueError(
             f"The datasets disagree on the unit of '{path}' ({', '.join(sorted(units))}). "
             'A series must use one unit: pass values=[...] in a common unit instead.'
         )
-    if not units:
+    if unitless:
         logger.info(
-            f"Note: no unit is recorded for '{path}', so its consistency across files was not checked."
+            f"Note: {unitless} of {len(sources)} datasets record no unit for '{path}', so "
+            'its consistency across them was not checked.'
         )
     return numbers, segments[-1]
 
@@ -301,17 +319,23 @@ def _numeric_metadata(dataset: Any) -> list[str]:
     return found
 
 
-def _check_variable(name: str, parameters: Sequence[str]) -> None:
+def _check_variable(name: str, parameters: Sequence[str], model_names: Sequence[str]) -> None:
+    """*parameters* are the table's columns; *model_names* every model parameter.
+
+    A model parameter is refused even when the template holds it fixed: a
+    repaired row may vary it, and its name must never mean two things.
+    """
     if not isinstance(name, str) or not name.isidentifier() or keyword.iskeyword(name):
         raise ValueError(
             f'variable={name!r} must be a valid Python identifier: it names a column of '
             "the table. Units are not part of it ('temperature', not 'Temperature (K)')."
         )
-    taken = set(TABLE_COLUMNS) | set(parameters) | {f'{p}_err' for p in parameters}
+    taken = set(TABLE_COLUMNS) | set(model_names) | set(parameters)
+    taken |= {f'{p}_err' for p in parameters}
     if name in taken:
         raise ValueError(
-            f"variable='{name}' collides with a column of the table. Pass variable= with "
-            'another name.'
+            f"variable='{name}' collides with a model parameter or a column of the table. "
+            'Pass variable= with another name.'
         )
 
 
@@ -352,13 +376,15 @@ def fit_series(
         raise ValueError('fit_series() fits 1D data in this version; the template holds 2D data.')
     if start not in _STARTS:
         raise ValueError(f"Unknown start {start!r}. Use 'previous' or 'template'.")
-    template._check_fit_setup(engine)
+    template._check_fit_setup(engine, method)
     parameters = template._param_manager.free_parameter_names()
 
     items, variable = _resolve_items(data, values, variable, order)
-    _check_variable(variable, parameters)
-    fit_options = _recordable(kwargs)
-    if start == 'previous' and method == 'differential_evolution':
+    _check_variable(variable, parameters, list(template.params))
+    # differential_evolution builds its population from the bounds: there is no
+    # chain to follow, and start_row must not claim one.
+    chain = start == 'previous' and method != 'differential_evolution'
+    if start == 'previous' and not chain:
         logger.info(
             "Note: method='differential_evolution' starts from the bounds, not from the "
             "previous row. start='previous' has no effect; the rows are independent."
@@ -373,20 +399,28 @@ def fit_series(
     )
 
     rows: list[SeriesRow] = []
-    source, start_row = template, None
-    q_request = template._q_range_request
+    source, seed = template, None
+    q_request = template._q_cut()
     interrupted = False
     with _interrupt_flag() as stop:
         try:
             for number, item in enumerate(items):
                 worker = source._copy_setup()
+                restarted = [] if seed is None else _leave_bounds(worker, template, seed)
+                start_row = None if seed is None else seed.index
                 row = _fit_one(worker, number, item, q_request, start_row, engine, method, kwargs)
                 if stop.requested:  # the engine swallowed Ctrl-C: this fit was cut short
                     break
+                if restarted:
+                    note = (
+                        f'{", ".join(restarted)} started from the template value: row '
+                        f'{start_row} left {"it" if len(restarted) == 1 else "them"} on a bound.'
+                    )
+                    row = replace(row, warnings=(*row.warnings, note))
                 rows.append(row)
                 progress.report(row)
-                if start == 'previous' and row.usable_as_start:
-                    source, start_row = worker, number
+                if chain and row.usable_as_start:
+                    source, seed = worker, row
         except KeyboardInterrupt:
             pass
         interrupted = len(rows) < len(items)
@@ -398,9 +432,13 @@ def fit_series(
         start=start,
         engine=engine,
         method=method,
-        fit_options=fit_options,
+        fit_options=kwargs,
         planned=len(items),
         interrupted=interrupted,
+        parameters=parameters,
+        # The model came from this session's template, not from a file, so the
+        # custom-model gate (which protects against untrusted files) is open.
+        allow_custom_models=True,
     )
     progress.finish(series)
     if interrupted:
@@ -432,6 +470,9 @@ def _fit_one(
                 worker.load_data(item.source)
             else:
                 worker.set_data(item.source)
+        except Exception as exc:  # noqa: BLE001 - one bad dataset must not stop the series
+            error = _message(exc)
+        else:
             try:
                 if worker.is_2d:
                     raise ValueError('2D data is not supported by fit_series() in this version.')
@@ -440,11 +481,19 @@ def _fit_one(
                     # through to a fit over the full range would look like a success.
                     worker.set_q_range(*q_request)
                 worker.fit(engine, method, **kwargs)
-            finally:
+            except Exception as exc:  # noqa: BLE001
+                error = _message(exc)
+            try:
                 analysis = build_analysis_dict(worker, None)
-        except Exception as exc:  # noqa: BLE001 - one bad dataset must not stop the series
-            error = str(exc) or type(exc).__name__
-    texts = (str(record.message) for record in caught)
+            except Exception as exc:  # noqa: BLE001 - keep the first failure as the reason
+                error = error or _message(exc)
+    # Only the categories forced to 'always' above: library deprecation notices
+    # that the active filters happen to let through are not about this dataset.
+    texts = (
+        str(record.message)
+        for record in caught
+        if issubclass(record.category, (UserWarning, RuntimeWarning))
+    )
     kept = tuple(dict.fromkeys(t for t in texts if not t.startswith(_FLAGGED_WARNINGS)))
     return SeriesRow(
         index=number,
@@ -458,18 +507,31 @@ def _fit_one(
     )
 
 
-def _recordable(options: dict[str, Any]) -> dict[str, Any] | None:
-    """The fit options as stored in a series file, or None when JSON cannot hold them."""
-    try:
-        json.dumps(options, allow_nan=False)
-    except (TypeError, ValueError):
-        warnings.warn(
-            'The fit options passed to fit_series() are not plain JSON values, so a '
-            'saved series will not record them.',
-            stacklevel=4,
-        )
-        return None
-    return dict(options)
+def _message(exc: Exception) -> str:
+    return str(exc) or type(exc).__name__
+
+
+def _leave_bounds(worker: IQuana, template: IQuana, seed: SeriesRow) -> list[str]:
+    """Start the parameters *seed* left on a bound from the template's values.
+
+    Chaining carries the previous row's values. A start exactly on a bound is a
+    trap for the default optimizer (bumps' amoeba simplex has no extent in that
+    direction and never leaves the wall), so a scan that crosses a bound and
+    comes back would stay pinned there. The template's value lies inside, and a
+    parameter that really belongs on the bound (a background at zero) returns
+    there in one fit. Returns the names that were moved.
+    """
+    moved = []
+    for name, _side in seed.result.get('on_bounds') or []:
+        if name in template.params:
+            worker.set_param(name, value=template.params[name]['value'])
+        elif name.endswith('_pd'):
+            base = name[:-3]
+            worker.set_pd_param(base, pd_width=template.get_pd_param(base)['pd'])
+        else:
+            continue
+        moved.append(name)
+    return moved
 
 
 class _StopFlag:
@@ -490,6 +552,9 @@ def _interrupt_flag() -> Iterator[_StopFlag]:
         yield flag
         return
     previous = signal.getsignal(signal.SIGINT)
+    if previous is None:  # installed outside Python (an embedding host): leave it alone
+        yield flag
+        return
 
     def handler(signum: int, frame: Any) -> None:
         flag.requested = True

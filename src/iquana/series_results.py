@@ -22,9 +22,10 @@ import json
 import math
 import os
 import statistics
+import warnings
 from collections import Counter
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from functools import cached_property
 from typing import Any
 
@@ -41,6 +42,7 @@ from .persistence import (
     check_schema,
     decode_numbers,
     fitter_from_document,
+    locate_data_file,
     read_json,
     relocate_data_section,
 )
@@ -74,14 +76,16 @@ TABLE_COLUMNS = ('row', 'label', 'chisq', 'reduced_chisq', 'n_points', 'flags', 
 # =========================================================================
 
 
-@dataclass(frozen=True, repr=False)
+# eq=False: rows compare and hash by identity (the analysis dict is unhashable).
+# No __slots__: cached_property needs the instance __dict__, frozen or not.
+@dataclass(frozen=True, repr=False, eq=False)
 class SeriesRow:
     """One dataset of a series: what was fitted, and how it went.
 
-    The fields up to ``edited`` are what a series file stores. Parameter values,
-    χ² and the point count are read out of ``analysis`` (a single-analysis
-    document) on demand. ``flags`` and ``variable`` are filled in by the owning
-    :class:`SeriesResult` and are never stored.
+    The fields up to ``source_relative`` are what a series file stores.
+    Parameter values, χ² and the point count are read out of ``analysis`` (a
+    single-analysis document) on demand. ``flags`` and ``variable`` are filled
+    in by the owning :class:`SeriesResult` and are never stored.
     """
 
     #: Row number in the original run. It never changes, so it is an identity.
@@ -99,10 +103,13 @@ class SeriesRow:
     start_row: int | None = None
     #: Replaced by :meth:`SeriesResult.update` after the run.
     edited: bool = False
+    #: ``source`` relative to the series file it was read from, so a row whose
+    #: file never loaded can still be retried after the project moved.
+    source_relative: str | None = None
     #: ``(flag, reason)`` pairs, set by the owning series.
-    flags: tuple[tuple[str, str], ...] = field(default=(), compare=False)
+    flags: tuple[tuple[str, str], ...] = ()
     #: Name of the series variable, for the row's own display.
-    variable: str = field(default='value', compare=False)
+    variable: str = 'value'
 
     @cached_property
     def result(self) -> dict[str, Any] | None:
@@ -127,9 +134,17 @@ class SeriesRow:
         return dict((self.result or {}).get('parameters') or {})
 
     @cached_property
+    def _configuration(self) -> dict[str, Any]:
+        return decode_numbers((self.analysis or {}).get('configuration') or {})
+
+    @cached_property
     def _bounds_table(self) -> dict[str, Any]:
-        config = decode_numbers((self.analysis or {}).get('configuration') or {})
-        return config.get('params') or {}
+        return self._configuration.get('params') or {}
+
+    @cached_property
+    def on_bounds(self) -> frozenset[str]:
+        """The varied parameters this row's fit left on a bound."""
+        return frozenset(name for name, _side in (self.result or {}).get('on_bounds') or [])
 
     def varied(self) -> list[str]:
         """The parameters this row's fit varied, in the model's parameter order.
@@ -151,7 +166,12 @@ class SeriesRow:
         A zero uncertainty is None too, meaning "not available", as in the fit
         report: it is what a fixed parameter reports.
         """
-        info = self._parameters.get(name) or {}
+        info = self._parameters.get(name)
+        if info is None and name.endswith('_pd'):
+            # A width a repair held fixed is not in the result: read the setting.
+            widths = (self._configuration.get('polydispersity') or {}).get('params') or {}
+            return _finite((widths.get(name[:-3]) or {}).get('pd')), None
+        info = info or {}
         return _finite(info.get('value')), _finite(info.get('stderr'), positive=True)
 
     def is_fixed(self, name: str) -> bool:
@@ -217,7 +237,7 @@ class SeriesRow:
         if outside:
             flags.append(('out_of_bounds', '; '.join(outside)))
         hits = self.result.get('on_bounds') or []
-        if hits:
+        if hits:  # in the result's order, with the side each one hit
             flags.append(('bound', '; '.join(self._bound_text(name, side) for name, side in hits)))
         return flags
 
@@ -280,11 +300,10 @@ def _finite(value: Any, *, positive: bool = False) -> float | None:
 
 
 def _columns(rows: Sequence[SeriesRow]) -> list[str]:
-    """The parameters the template varied, read from the rows themselves.
+    """The parameters the template varied, read from the rows.
 
-    An unedited fitted row varied exactly the template's free parameters, so
-    no model has to be compiled to know the columns, even after a reload.
-    Edited rows are a fallback only: a repair may vary something else.
+    Only for a series file that does not record its columns: a run stores the
+    template's free parameters, which no repair or filter can change.
     """
     fitted = sorted((row for row in rows if not row.failed), key=lambda row: row.edited)
     return fitted[0].varied() if fitted else []
@@ -294,13 +313,18 @@ def _jumps(rows: Sequence[SeriesRow], columns: Sequence[str]) -> dict[int, list[
     """Reasons per row number for the ``jump`` flag (see ``docs/series.md``).
 
     Steps are taken between **adjacent** rows that both hold a converged fit,
-    so a failed or unconverged row breaks the chain rather than bridging it.
+    so a failed or unconverged row breaks the chain rather than bridging it. A
+    step to or from a value held on a bound is left out too: the bound, not the
+    data, set that value, and a stretch of such rows would drive the median
+    step to zero and make every ordinary step look like a jump.
     """
     reasons: dict[int, list[str]] = {}
     for name in columns:
         steps = []
         for previous, row in itertools.pairwise(rows):
             if not (previous.converged_fit and row.converged_fit):
+                continue
+            if name in previous.on_bounds or name in row.on_bounds:
                 continue
             (before, sigma_before), (after, sigma_after) = (
                 previous.estimate(name),
@@ -327,9 +351,9 @@ def _jumps(rows: Sequence[SeriesRow], columns: Sequence[str]) -> dict[int, list[
     return reasons
 
 
-def _assess(rows: Sequence[SeriesRow], variable: str) -> list[SeriesRow]:
+def _assess(rows: Sequence[SeriesRow], variable: str, columns: Sequence[str]) -> list[SeriesRow]:
     """The rows with their flags (and display variable) filled in."""
-    jumps = _jumps(rows, _columns(rows))
+    jumps = _jumps(rows, columns)
     assessed = []
     for row in rows:
         flags = row.own_flags()
@@ -390,6 +414,7 @@ class SeriesResult:
         fit_options: dict[str, Any] | None,
         planned: int,
         interrupted: bool = False,
+        parameters: Sequence[str] | None = None,
         loaded_from: str | None = None,
         allow_custom_models: bool = False,
     ):
@@ -397,7 +422,8 @@ class SeriesResult:
         self.start = start
         self.engine = engine
         self.method = method
-        self.fit_options = fit_options
+        #: The keyword arguments every row's fit() received (as given to fit_series()).
+        self.fit_options = dict(fit_options or {})
         self.planned = planned
         self.interrupted = interrupted
         self._template = template
@@ -405,7 +431,10 @@ class SeriesResult:
         self._allow_custom_models = allow_custom_models
         #: Set on a filtered selection (flagged()), which is read-only.
         self._selection_of: int | None = None
-        self._set_rows(_assess(rows, variable))
+        #: The table's parameter columns: fixed for the life of the series, so a
+        #: repair or a filter never changes the table's shape.
+        self._parameters = list(parameters) if parameters is not None else _columns(rows)
+        self._set_rows(_assess(rows, variable, self._parameters))
 
     def _set_rows(self, rows: list[SeriesRow]) -> None:
         self._rows = rows
@@ -424,7 +453,7 @@ class SeriesResult:
     @property
     def parameters(self) -> list[str]:
         """The table's parameter columns: what the template varied."""
-        return _columns(self._rows)
+        return list(self._parameters)
 
     def __len__(self) -> int:
         return len(self._rows)
@@ -472,6 +501,11 @@ class SeriesResult:
     # Table
     # ------------------------------------------------------------------
 
+    def _fields(self) -> list[str]:
+        """The keys of every :meth:`table` row, in order; the same for an empty table."""
+        pairs = (key for name in self._parameters for key in (name, f'{name}_err'))
+        return ['row', 'label', self.variable, *pairs, *TABLE_COLUMNS[2:]]
+
     def table(self) -> list[dict[str, Any]]:
         """One flat dict per row, the representation every export is built from.
 
@@ -505,7 +539,7 @@ class SeriesResult:
         """
         import pandas as pd
 
-        return pd.DataFrame(self.table()).set_index('row')
+        return pd.DataFrame(self.table(), columns=self._fields()).set_index('row')
 
     def save_table(self, filename: str) -> None:
         """Write :meth:`table` as CSV, including each failure's reason.
@@ -513,11 +547,10 @@ class SeriesResult:
         Not ``save_results``: ``IQuana.save_results()`` writes one fit's curve
         and residuals, which is a different kind of file.
         """
-        table = self.table()
         buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=list(table[0]) if table else list(TABLE_COLUMNS))
+        writer = csv.DictWriter(buffer, fieldnames=self._fields())
         writer.writeheader()
-        writer.writerows(table)
+        writer.writerows(self.table())
         atomic_write(filename, buffer.getvalue())
         logger.info(f'{OK} Series table saved to {filename}')
 
@@ -670,13 +703,14 @@ class SeriesResult:
         return series_plotting.plot_trend(self, list(parameters) or self.parameters, show=show)
 
     def plot_fits(
-        self, rows: Sequence[int | str] | str | None = None, *, show: bool | None = None
+        self, rows: Sequence[int | str] | int | str | None = None, *, show: bool | None = None
     ) -> Any:
         """Data and fit for several rows, overlaid.
 
         Args:
-            rows: Row numbers or labels, or ``'flagged'``. By default up to nine
-                rows spread evenly over the rows that have a fit.
+            rows: A row number or label, a list of them, or ``'flagged'``. By
+                default up to nine rows spread evenly over the rows that have a
+                fit.
             show: As for :meth:`plot`.
 
         A row whose saved result cannot be restored (its data file changed) is
@@ -690,12 +724,15 @@ class SeriesResult:
                 fitted[round(i * (len(fitted) - 1) / max(count - 1, 1))] for i in range(count)
             ]
             selected = [self[index] for index in dict.fromkeys(chosen)]
-        elif isinstance(rows, str) and rows == 'flagged':
+            if not selected:
+                raise ValueError('No rows to plot: no row of this series has a fit.')
+        elif rows == 'flagged':
             selected = list(self.flagged())
+            if not selected:
+                raise ValueError('No rows to plot: no row of this series is flagged.')
         else:
-            selected = [self[key] for key in rows]
-        if not selected:
-            raise ValueError('No rows to plot: no row of this series has a fit.')
+            keys = [rows] if isinstance(rows, (int, str)) else rows
+            selected = [self[key] for key in keys]
         return series_plotting.plot_fits(self, selected, show=show)
 
     # ------------------------------------------------------------------
@@ -727,23 +764,38 @@ class SeriesResult:
         return fitter_from_document(
             IQuana,
             self._template,
-            data=target.source,
+            data=self._source_path(target),
             allow_custom_models=self._allow_custom_models,
         )
+
+    def _source_path(self, row: SeriesRow) -> str | None:
+        """Where *row*'s file is now: next to the series file first, then where it was."""
+        if row.source is None:
+            return None
+        section = {'path_absolute': row.source, 'path_relative': row.source_relative}
+        found, _tried = locate_data_file(section, self._loaded_from)
+        return found or row.source
 
     def update(self, row: int | str, fitter: IQuana) -> None:
         """Replace a row with a repaired fit, then recompute the flags.
 
         Checked before anything is replaced: the fitter holds a result that
-        describes its current setup, its data is the row's data, and its model
-        is the series' model. Values, bounds and vary flags may differ from the
-        template. The row is marked edited.
+        describes its current setup, its data is the row's data (1D, as for the
+        run), and its model is the series' model. Values, bounds and vary flags
+        may differ from the template. The row is marked edited.
+
+        A repair fitted with another engine or method than the rest of the
+        series is accepted with a warning: its χ² and uncertainties are not
+        comparable with theirs. ``fitter.fit(series.engine, series.method,
+        **series.fit_options)`` repeats the series' own fit.
 
         Raises:
             ValueError: If any check fails; the row is left unchanged.
         """
         self._require_full('update()')
         target = self[row]
+        if fitter.is_2d:
+            raise ValueError('2D data is not supported by fit_series() in this version.')
         document = build_analysis_dict(fitter, None)
         if document['result'] is None:
             reason = document['result_omitted'] or 'the fitter holds no fit result'
@@ -752,14 +804,28 @@ class SeriesResult:
             )
         self._check_same_data(target, document)
         self._check_same_model(target, document)
+        self._warn_if_other_optimizer(target, document['result'])
         repaired = replace(target, analysis=document, error=None, warnings=(), edited=True)
-        self._set_rows(
-            _assess([repaired if r.index == target.index else r for r in self._rows], self.variable)
-        )
+        rows = [repaired if r.index == target.index else r for r in self._rows]
+        self._set_rows(_assess(rows, self.variable, self._parameters))
         logger.info(f'{OK} Row {target.index} ({target.label}) replaced; flags recomputed')
 
-    @staticmethod
-    def _check_same_data(target: SeriesRow, document: dict[str, Any]) -> None:
+    def _warn_if_other_optimizer(self, target: SeriesRow, result: dict[str, Any]) -> None:
+        reference = next((r.result for r in self._rows if not r.failed and not r.edited), None)
+        if reference is None:
+            return
+        used = (result.get('engine'), result.get('method'))
+        expected = (reference.get('engine'), reference.get('method'))
+        if used != expected:
+            warnings.warn(
+                f'Row {target.index} was refitted with {"/".join(map(str, used))}; the series '
+                f'was fitted with {"/".join(map(str, expected))}. Their chi-squared values and '
+                'uncertainties are not comparable. fitter.fit(series.engine, series.method, '
+                '**series.fit_options) repeats the series fit.',
+                stacklevel=3,
+            )
+
+    def _check_same_data(self, target: SeriesRow, document: dict[str, Any]) -> None:
         data = document['data'] or {}
         if target.analysis is not None:
             expected = (target.analysis.get('data') or {}).get('array_fingerprint_now')
@@ -768,7 +834,7 @@ class SeriesResult:
             same = (
                 data.get('source') == 'file'
                 and os.path.normcase(os.path.abspath(data.get('path_absolute') or ''))
-                == os.path.normcase(target.source or '')
+                == os.path.normcase(self._source_path(target) or '')
                 and data.get('dataset') in (0, None)
             )
         if not same:
@@ -820,25 +886,47 @@ class SeriesResult:
             'start': self.start,
             'engine': self.engine,
             'method': self.method,
-            'fit_options': self.fit_options,
+            'fit_options': self._recordable_options(),
             'planned': self.planned,
             'processed': len(self._rows),
             'interrupted': self.interrupted,
+            'parameters': self._parameters,
             'template': self._template,
             'rows': [self._row_document(row, target) for row in self._rows],
         }
         atomic_write(target, json.dumps(document, indent=1, allow_nan=False, ensure_ascii=False))
         logger.info(f'{OK} Series saved to {filename} ({len(self._rows)} rows)')
 
+    def _recordable_options(self) -> dict[str, Any] | None:
+        """The fit options as the file stores them, or None when JSON cannot hold them."""
+        try:
+            json.dumps(self.fit_options, allow_nan=False)
+        except (TypeError, ValueError):
+            warnings.warn(
+                'The fit options of this series are not plain JSON values, so the saved '
+                'file does not record them.',
+                stacklevel=3,
+            )
+            return None
+        return self.fit_options
+
     def _row_document(self, row: SeriesRow, target: str) -> dict[str, Any]:
         analysis = row.analysis
         if analysis is not None:
             data = relocate_data_section(analysis.get('data'), self._loaded_from, target)
             analysis = {**analysis, 'data': data}
+        source = row.source
+        if source is not None:  # the retry path of a row whose file never loaded
+            source = relocate_data_section(
+                {'source': 'file', 'path_absolute': source, 'path_relative': row.source_relative},
+                self._loaded_from,
+                target,
+            )
         return {
             'label': row.label,
             'value': row.value,
-            'source': row.source,
+            'source': None if source is None else source['path_absolute'],
+            'source_relative': None if source is None else source['path_relative'],
             'start_row': row.start_row,
             'edited': row.edited,
             'error': row.error,
@@ -874,16 +962,39 @@ class SeriesResult:
         _require(
             isinstance(variable, str) and variable.isidentifier(), 'variable', 'must be a name'
         )
+        _require(document.get('start') in ('previous', 'template'), 'start', 'is not a start mode')
+        _require(isinstance(document.get('engine'), str), 'engine', 'must be a string')
+        planned = document.get('planned')
+        _require(
+            isinstance(planned, int) and planned >= len(entries),
+            'planned',
+            'must be a count no smaller than the number of rows',
+        )
+        parameters = document.get('parameters')
+        _require(
+            parameters is None
+            or (isinstance(parameters, list) and all(isinstance(p, str) for p in parameters)),
+            'parameters',
+            'must be a list of names',
+        )
+        rows = [_row_from_document(index, entry) for index, entry in enumerate(entries)]
+        labels = Counter(row.label for row in rows)
+        _require(
+            all(n == 1 for n in labels.values()),
+            'rows',
+            f'repeat a label ({", ".join(sorted(k for k, n in labels.items() if n > 1))})',
+        )
         series = cls(
-            [_row_from_document(index, entry) for index, entry in enumerate(entries)],
+            rows,
             variable=variable,
             template=template,
-            start=str(document.get('start')),
-            engine=str(document.get('engine')),
+            start=document['start'],
+            engine=document['engine'],
             method=document.get('method'),
             fit_options=document.get('fit_options'),
-            planned=int(document.get('planned') or len(entries)),
+            planned=planned,
             interrupted=bool(document.get('interrupted')),
+            parameters=parameters,
             loaded_from=os.path.abspath(filename),
             allow_custom_models=allow_custom_models,
         )
@@ -907,10 +1018,16 @@ def _row_from_document(index: int, entry: Any) -> SeriesRow:
         check_analysis_document(analysis, f'{where}.analysis.')
     start_row = entry.get('start_row')
     _require(
-        start_row is None or isinstance(start_row, int),
+        start_row is None or (isinstance(start_row, int) and 0 <= start_row < index),
         f'{where}.start_row',
-        'must be a row number or null',
+        'must be the number of an earlier row, or null',
     )
+    for key in ('source', 'source_relative', 'error'):
+        _require(
+            entry.get(key) is None or isinstance(entry.get(key), str),
+            f'{where}.{key}',
+            'must be a string or null',
+        )
     return SeriesRow(
         index=index,
         label=entry['label'],
@@ -921,4 +1038,5 @@ def _row_from_document(index: int, entry: Any) -> SeriesRow:
         warnings=tuple(str(text) for text in entry.get('warnings') or ()),
         start_row=start_row,
         edited=bool(entry.get('edited')),
+        source_relative=entry.get('source_relative'),
     )

@@ -43,6 +43,11 @@ of it. A series of one file gives exactly the numbers of `fit()` on that file.
 The template itself is not changed, so you can run `fit_series()` twice with
 different settings and compare.
 
+The Q cut is replayed as you asked for it: an end left open in `set_q_range()`
+stays open, so each dataset uses its own end. A range the template got any
+other way (limits carried by a dataset given to `set_data()`) is replayed as
+its two numbers.
+
 This is not `MultiFitter`. A series fits N independent problems; a
 [simultaneous fit](multifit.md) fits one problem with parameters shared between
 datasets.
@@ -52,7 +57,7 @@ datasets.
 | `data` | Meaning |
 |---|---|
 | A file path | One dataset, one row. |
-| A string with `*` or `{name}` | A pattern. Only these two are special: `?`, `[` and `]` are ordinary characters, and `*` does not cross a directory. |
+| A string with `*` or `{name}` | A pattern. Only these two are special: `?`, `[` and `]` are ordinary characters, `*` does not cross a directory, and `**` is the same as `*` (there is no recursive search). |
 | A list | Paths, in-memory datasets (anything `set_data()` accepts, such as `data_ops` results), or a mixture, fitted in the order given. |
 
 Each row has a **label**: a file's path relative to the common directory of the
@@ -114,8 +119,15 @@ use the file-name placeholder. Check one of your own files with
 `print(data.sample)` and `print(data.meta_data)`.
 
 Units are not converted. When files record a unit for the value and the units
-differ, the run is refused; when no unit is recorded, the run says that their
-consistency could not be checked.
+differ, the run is refused; when some files record no unit, the run says that
+their consistency could not be checked. sasdata 0.12 does not pass on the units
+of NXcanSAS (HDF5) files at all, so for those files the check never applies:
+if a scan mixes units, convert the values yourself and pass `values=[...]`.
+
+Every file is read for its value before the first fit, so with this form an
+unreadable file stops the call (it could not be placed in the series). Remove
+it, or pass the files as a list with `values=[...]`, where a broken file
+becomes a failed row like any other.
 
 **With no value**, the variable is `index`: 0, 1, 2, ...
 
@@ -157,16 +169,22 @@ template.
 
 A row is **usable as a start** when its fit completed, the engine did not
 report non-convergence, and every varied value is finite and inside its
-bounds. A row resting *on* a bound is usable (a background that really goes to
-zero should chain); a failed row is not, and the next fit starts from the last
-usable row instead. Each row records which row it started from.
+bounds. A failed row is not, and the next fit starts from the last usable row
+instead. Each row records which row it started from.
+
+A row resting *on* a bound is usable, but the parameters on the bound start
+the next fit from the template's value, not from the bound. A start exactly on
+a bound traps the default optimizer (bumps' amoeba never leaves it), so a scan
+that crosses a bound and comes back would stay pinned there. A parameter that
+really belongs on the bound, such as a background at zero, returns there in
+one fit. The row says so in its warnings.
 
 A chain can still be led astray by a fit that is wrong but looks successful.
 The `jump` and `bound` flags are there to show that, and a second run with
 `start='template'` is the check.
 
 `method='differential_evolution'` builds its population from the bounds and
-ignores the start values; the run says so once.
+ignores the start values; the run says so once, and records no chain.
 
 ## While it runs
 
@@ -181,7 +199,10 @@ being printed one by one; the summary counts them and `series.warnings()`
 lists each text with the number of rows.
 
 **Ctrl-C** stops the run and returns the rows finished so far, with a warning.
-The fit in progress is discarded.
+The fit in progress is discarded, also with methods that catch the interrupt
+themselves. That needs the main thread: run from another thread, Ctrl-C is
+not handled, and since Python's warning capture is process-wide, warnings that
+other threads raise during the run can land in a row.
 
 ## The result
 
@@ -189,12 +210,12 @@ The fit in progress is discarded.
 Series fit · sphere · 41 datasets · variable: temperature · start=previous
 38 ok, 2 flagged, 1 failed
 
- #  label       temperature  scale                background         radius          χ²ᵣ    flags
- 0  T_020K.dat           20  0.020100 ± 0.000300  0.0102 ± 0.0004    45.12 ± 0.21    1.04
- 1  T_022K.dat           22  0.020000 ± 0.000300  0.0101 ± 0.0004    45.30 ± 0.22    1.10
+ #  label       temperature  radius          scale                background         χ²ᵣ    flags
+ 0  T_020K.dat           20  45.12 ± 0.21    0.020100 ± 0.000300  0.0102 ± 0.0004    1.04
+ 1  T_022K.dat           22  45.30 ± 0.22    0.020000 ± 0.000300  0.0101 ± 0.0004    1.10
  ...
-16  T_052K.dat           52  0.0031 ± 0.0009      0.0180 ± 0.0006    100 ± -         9.83   bound, jump
-17  T_054K.dat           54  -                    -                  -               -      failed
+16  T_052K.dat           52  100 ± -         0.0031 ± 0.0009      0.0180 ± 0.0006    9.83   bound, jump
+17  T_054K.dat           54  -               -                    -                  -      failed
 ```
 
 The columns are the row number, the label, the series variable, every
@@ -234,9 +255,9 @@ A row explains itself:
 >>> series[16]
 Row 16 · T_052K.dat · temperature = 52
   started from: row 15 in the original run
+  radius      100 ± -   radius at upper bound (100)
   scale       0.0031 ± 0.0009
   background  0.0180 ± 0.0006
-  radius      100 ± -   radius at upper bound (100)
   χ²ᵣ 9.83 · 212 points · flags: bound, jump
   warnings: (none)
   -> series.fitter(16) opens it as a normal IQuana
@@ -314,9 +335,13 @@ fits applies:
 bad = series.fitter(16)
 bad.plot_results()
 bad.set_param('radius', value=60, max=200)
-bad.fit()
+bad.fit(series.engine, series.method, **series.fit_options)   # the series' own fit
 series.update(16, bad)
 ```
+
+A plain `bad.fit()` uses the single-fit defaults. If those differ from what
+the series used, `update()` accepts the row with a warning: its χ² and
+uncertainties are not comparable with the other rows'.
 
 | The row | `fitter(row)` gives |
 |---|---|
@@ -330,7 +355,7 @@ as it was if one fails:
 1. the fitter holds a result that describes its current setup. Changing a
    bound and forgetting `fit()` gives *"Fit this dataset again before updating
    row 16."*;
-2. its data is the row's data;
+2. its data is the row's data (1D, as for the run);
 3. its model is the series' model. A different model belongs in a second
    series.
 

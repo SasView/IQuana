@@ -39,12 +39,20 @@ All notable changes to this project are documented in this file.
 - `fit()` refuses a model with no free parameter before calling the engine,
   with a message that says what to set. It used to fail inside bumps with
   `max() iterable argument is empty`.
+- `fit()` refuses an unknown `method=` for the chosen engine before touching
+  the data, and a dataset with no point selected (all masked, invalid or
+  outside the Q range). Both engines used to "fit" such a dataset and report
+  chi-squared = 0.
+- `set_q_range()` treats an infinite end as open, so `qmax=float('inf')`
+  saves and reloads with its fit result.
 - `save_analysis()` records the Q range as it was requested: an end left
   open in `set_q_range()` is written as `null` and resolves against the data
   the analysis is reloaded with. `set_q_range(qmin=0.03)` on data ending at
   0.2 used to be saved as `qmax = 0.2`, which cut a wider dataset given with
   `load_analysis(path, data=...)`. Files written before keep their two
-  numbers.
+  numbers. A range that did not come from `set_q_range()` (limits carried by
+  a dataset given to `set_data()`) is saved too; it used to be lost, and the
+  reopened analysis dropped its result.
 - `load_analysis()` accepts a saved parameter value outside its bounds with a
   warning, instead of refusing the file. `method='leastsq'` ignores bounds and
   can end there, so such analyses could not be reopened. `fit()` still refuses
@@ -57,6 +65,9 @@ All notable changes to this project are documented in this file.
 - `load_data()` on a text file with no readable data points raises a
   `ValueError` that names the file, instead of a `TypeError` from numpy
   (`ufunc 'isnan' not supported`).
+- A fit with a parameter shared between components
+  (`set_models(..., shared=['sld'])`) reported that parameter as fixed: its
+  linked copy overwrote the fitted entry in the result.
 
 ## [0.6.0] - 2026-11-12
 

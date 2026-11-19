@@ -465,7 +465,7 @@ def _row(index, radius, err=0.1, converged=True, failed=False, on_bounds=()):
 
 
 def flags_of(rows):
-    return {row.index: row.flag_names for row in _assess(rows, 'index') if row.flags}
+    return {row.index: row.flag_names for row in _assess(rows, 'index', ['radius']) if row.flags}
 
 
 def test_a_smooth_ramp_has_no_flags():
@@ -603,7 +603,7 @@ def test_table_dataframe_csv_and_renderings_agree(fitted, tmp_path):
 def test_zero_and_missing_uncertainties_show_as_unavailable():
     rows = [_row(0, 40.0, err=0.0), _row(1, 41.0, err=None)]
     text = results_module._estimate_text
-    assert all(text(row, 'radius').endswith('-') for row in _assess(rows, 'index'))
+    assert all(text(row, 'radius').endswith('-') for row in _assess(rows, 'index', ['radius']))
 
 
 def synthetic_series(rows):
@@ -809,3 +809,254 @@ def test_a_row_explains_itself(fitted):
     assert 'started from: row 2 in the original run' in text
     assert 'radius' in text and 'series.fitter(3)' in text
     assert 'started from: the template' in repr(fitted[0])
+
+
+# =============================================================================
+# Regressions from the review of the first implementation (26-REVIEW-*.md)
+# =============================================================================
+
+
+def test_a_chain_that_crosses_a_bound_and_comes_back_follows_the_data(tmp_path):
+    """bumps' amoeba never leaves a bound it starts on; the chain must not start there."""
+    radii = [44, 47, 50, 53, 56, 53, 50, 47, 44, 41]
+    for i, radius in enumerate(radii):
+        write_dataset(simulate(float(radius), seed=i), tmp_path / f'r{i:02d}.dat')
+    template = make_template()
+    template.set_param('radius', value=40, min=10, max=50)
+    series = template.fit_series(str(tmp_path / 'r*.dat'))
+    for row, truth in zip(series, radii, strict=True):
+        assert row.estimate('radius')[0] == pytest.approx(min(truth, 50), abs=0.5)
+    notes = [text for row in series for text in row.warnings]
+    assert any('radius started from the template value' in text for text in notes)
+
+
+def test_a_wildcard_next_to_the_placeholder_does_not_steal_its_digits(tmp_path, no_fit):
+    for name in ('T_ab300K.dat', 'T_ab129K.dat', 'T_run2_310K.dat'):
+        (tmp_path / name).write_text('x')
+    items, _variable = series_module._resolve_items(str(tmp_path / 'T_*{t}K.dat'), None, None, None)
+    assert [item.value for item in items] == [129.0, 300.0, 310.0]
+    (tmp_path / 'S_300_b2.dat').write_text('x')
+    items, _variable = series_module._resolve_items(str(tmp_path / 'S_{t}*.dat'), None, None, None)
+    assert [item.value for item in items] == [300.0]
+
+
+def test_a_placeholder_number_must_be_finite(tmp_path, no_fit):
+    (tmp_path / 'X_1e999K.dat').write_text('x')
+    with pytest.raises(ValueError, match='not a finite number'):
+        make_template().fit_series(str(tmp_path / 'X_{t}K.dat'))
+
+
+def test_a_misspelt_method_is_refused_before_any_dataset_is_read(pattern, monkeypatch):
+    def no_load(*_args, **_kwargs):
+        raise AssertionError('a dataset was read although the method is unknown')
+
+    monkeypatch.setattr(IQuana, 'load_data', no_load)
+    with pytest.raises(ValueError, match="Unknown method 'amoba'"):
+        make_template().fit_series(pattern, method='amoba')
+    with pytest.raises(ValueError, match="Unknown method 'least_square'"):
+        make_template().fit_series(pattern, engine='lmfit', method='least_square')
+
+
+def test_a_fully_masked_frame_fails_instead_of_seeding_the_chain(scan):
+    masked = simulate(41.0, seed=1)
+    masked.mask = np.ones(len(masked.x), dtype=bool)
+    masked.title = 'masked'
+    good = [simulate(40.0 + 2 * i, seed=i) for i in (0, 2)]
+    good[0].title, good[1].title = 'first', 'third'
+    for engine in ('bumps', 'lmfit'):
+        series = make_template().fit_series([good[0], masked, good[1]], engine=engine)
+        assert series[1].failed and 'No data points are selected' in series[1].error
+        assert series[2].start_row == 0
+
+
+def test_the_columns_survive_repairs_filters_and_reloads(tmp_path, scan):
+    pd = pytest.importorskip('pandas')
+    with pytest.raises(ValueError, match='collides with a model parameter'):
+        make_template().fit_series([os.path.join(scan, 'T_020K.dat')], values=[25], variable='sld')
+
+    series = make_template().fit_series([os.path.join(scan, 'T_020K.dat')], values=[25])
+    repaired = series.fitter(0)
+    repaired.set_param('radius', vary=False)
+    repaired.set_param('sld', vary=True, min=0, max=10)
+    repaired.fit()
+    series.update(0, repaired)
+    assert series.parameters == ['radius', 'scale', 'background']
+    assert series.table()[0]['value'] == 25.0
+    assert series.table()[0]['radius_err'] is None  # held fixed by the repair
+
+    empty = series.flagged()
+    assert list(empty.to_dataframe().columns) == series._fields()[1:]
+    empty.save_table(str(tmp_path / 'empty.csv'))
+    assert pd.read_csv(tmp_path / 'empty.csv').columns.tolist() == series._fields()
+
+    series.save_analysis(str(tmp_path / 's.json'))
+    assert SeriesResult.load_analysis(str(tmp_path / 's.json')).parameters == series.parameters
+
+
+def test_a_failed_series_keeps_its_columns(tmp_path):
+    (tmp_path / 'a.dat').write_text('not data\n')
+    series = make_template().fit_series([str(tmp_path / 'a.dat')])
+    assert series.parameters == ['radius', 'scale', 'background']
+
+
+def test_a_repair_that_fixes_a_pd_width_keeps_its_value(scan):
+    template = make_template()
+    template.set_pd_param('radius', pd_width=0.1, pd_n=15, vary=True)
+    template.enable_polydispersity(True)
+    series = template.fit_series(
+        [os.path.join(scan, 'T_020K.dat'), os.path.join(scan, 'T_022K.dat')]
+    )
+    repaired = series.fitter(0)
+    repaired.set_pd_param('radius', pd_width=0.12, vary=False)
+    repaired.fit()
+    series.update(0, repaired)
+    assert series.table()[0]['radius_pd'] == pytest.approx(0.12)
+    assert series.table()[0]['radius_pd_err'] is None
+
+
+def test_a_shared_composite_parameter_is_a_column(pattern):
+    composite = IQuana()
+    composite.set_models(small='sphere', large='sphere', shared=['sld'])
+    composite.set_resolution('none')
+    composite.set_param('sld', value=2, min=0, max=10, vary=True)
+    series = composite.fit_series(pattern)
+    assert series.parameters == ['sld']
+    assert not series[0].is_fixed('sld')
+    assert series[0].estimate('sld')[1] is not None
+
+
+def test_a_preselected_in_memory_q_range_is_kept(tmp_path):
+    preselected = simulate(40.0)
+    preselected.qmin, preselected.qmax = 0.04, 0.15
+    preselected.title = 'cut'
+    template = make_template()
+    template.set_data(preselected)
+    assert template._q_cut() == (0.04, 0.15)
+    write_dataset(simulate(41.0, seed=1), tmp_path / 'frame.dat')
+    series = template.fit_series([str(tmp_path / 'frame.dat'), preselected])
+    expected = int(((preselected.x >= 0.04) & (preselected.x <= 0.15)).sum())
+    assert series[0].n_points == expected
+    reopened = series.fitter(1)
+    assert reopened.fit_result is not None and reopened.get_q_range() == (0.04, 0.15)
+
+
+def test_an_infinite_q_end_is_open_and_the_result_still_restores(tmp_path, scan):
+    single = make_template(os.path.join(scan, 'T_020K.dat'))
+    single.set_q_range(qmin=0.01, qmax=float('inf'))
+    assert single._q_range_request == (0.01, None)
+    single.fit()
+    single.save_analysis(str(tmp_path / 'a.json'))
+    assert IQuana.load_analysis(str(tmp_path / 'a.json')).fit_result is not None
+
+
+def test_a_live_custom_model_reopens_in_the_same_session(tmp_path, pattern):
+    import sasmodels
+
+    source = os.path.join(os.path.dirname(sasmodels.__file__), 'models', 'line.py')
+    plugin = tmp_path / 'my_line.py'
+    shutil.copy(source, plugin)
+    template = IQuana()
+    template.set_model(str(plugin))
+    template.set_resolution('none')
+    template.set_weighting('none')
+    template.set_param('intercept', value=0.01, min=-10, max=10, vary=True)
+    series = template.fit_series(pattern)
+    assert series.fitter(0).fit_result is not None
+    series.plot_fits(rows=0, show=False)
+
+
+def test_a_moved_series_can_still_retry_a_file_that_never_loaded(tmp_path):
+    project = tmp_path / 'project'
+    write_scan(str(project / 'data'), temperatures=[20, 22])
+    (project / 'data' / 'T_024K.dat').write_text('not data\n')
+    series = make_template().fit_series(str(project / 'data' / 'T_{temperature}K.dat'))
+    broken = series['T_024K.dat'].index
+    series.save_analysis(str(project / 'scan.json'))
+
+    shutil.move(str(project), str(tmp_path / 'moved'))
+    write_dataset(simulate(42.0), tmp_path / 'moved' / 'data' / 'T_024K.dat')
+    reloaded = SeriesResult.load_analysis(str(tmp_path / 'moved' / 'scan.json'))
+    retry = reloaded.fitter(broken)
+    retry.fit()
+    reloaded.update(broken, retry)
+    assert not reloaded[broken].failed
+
+
+def test_a_repair_with_another_optimizer_warns(fitted):
+    repaired = fitted.fitter(2)
+    repaired.fit(engine='lmfit')
+    with pytest.warns(UserWarning, match='not comparable'):
+        fitted.update(2, repaired)
+    same = fitted.fitter(3)
+    same.fit(fitted.engine, fitted.method, **fitted.fit_options)
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        fitted.update(3, same)
+
+
+def test_update_refuses_a_2d_fitter(fitted):
+    image = IQuana()
+    image.set_data(examples.simulate_2d('sphere', radius=40, npixels=24))
+    image.set_model('sphere')
+    with pytest.raises(ValueError, match='2D data is not supported'):
+        fitted.update(0, image)
+
+
+def test_a_bound_pinned_parameter_does_not_make_ordinary_steps_jumps():
+    rows = [_row(i, 40.0 + 3 * i) for i in range(3)]
+    rows += [_row(i, 50.0, err=1e-7, on_bounds=[('radius', 'max')]) for i in range(3, 10)]
+    assert 'jump' not in {flag for names in flags_of(rows).values() for flag in names}
+
+
+def test_plot_fits_takes_one_row_by_number_or_label(fitted):
+    assert len(fitted.plot_fits(1, show=False).data) == 2
+    assert len(fitted.plot_fits('T_022K.dat', show=False).data) == 2
+    with pytest.raises(ValueError, match='no row of this series is flagged'):
+        fitted.plot_fits('flagged', show=False)
+
+
+def test_differential_evolution_records_no_chain(pattern, monkeypatch):
+    real_fit = IQuana.fit
+    monkeypatch.setattr(
+        IQuana, 'fit', lambda self, engine, method, **kw: real_fit(self, engine, 'least_squares')
+    )
+    series = make_template().fit_series(pattern, engine='lmfit', method='differential_evolution')
+    assert all(row.start_row is None for row in series)
+
+
+def test_the_first_error_of_a_row_is_its_reason(pattern, monkeypatch):
+    monkeypatch.setattr(
+        IQuana, 'fit', lambda *a, **k: (_ for _ in ()).throw(RuntimeError('fit broke'))
+    )
+    real_build = series_module.build_analysis_dict
+
+    def build(fitter, *args, **kwargs):
+        if fitter.data is None:  # the template's own document
+            return real_build(fitter, *args, **kwargs)
+        raise ValueError('doc')
+
+    monkeypatch.setattr(series_module, 'build_analysis_dict', build)
+    series = make_template().fit_series(pattern)
+    assert series[0].error == 'fit broke'
+
+
+def test_malformed_series_files_are_refused(fitted, tmp_path):
+    path = tmp_path / 'scan.json'
+    fitted.save_analysis(str(path))
+    good = json.loads(path.read_text())
+    for change, message in (
+        (lambda d: d['rows'][1].update(label=d['rows'][0]['label']), 'repeat a label'),
+        (lambda d: d['rows'][1].update(start_row=100), 'earlier row'),
+        (lambda d: d.update(planned=1), 'planned'),
+        (lambda d: d['rows'][1].update(source=3), 'string or null'),
+        (lambda d: d.update(start=None), 'start'),
+    ):
+        document = json.loads(json.dumps(good))
+        change(document)
+        path.write_text(json.dumps(document))
+        with pytest.raises(AnalysisFileError, match=message):
+            SeriesResult.load_analysis(str(path))
+
+
+def test_rows_are_hashable(fitted):
+    assert len(set(fitted)) == len(fitted)

@@ -642,21 +642,11 @@ def _fit_range_section(fitter: Any) -> dict[str, Any] | None:
     with ``data=``. The reader already passes ``null`` through to
     ``set_q_range()``.
 
-    A range set without ``set_q_range()`` (MultiFitter's owned copies assign
-    it directly) has no request, or one that no longer resolves to it; such a
-    range is written as the two numbers in force, as before.
+    A range set any other way is written as the two numbers in force (see
+    ``IQuana._q_cut``).
     """
-    if fitter.data is None or fitter._full_q_range is None:
-        return None
-    request = fitter._q_range_request
-    if request is not None and fitter._resolve_q_request(*request) == fitter.get_q_range():
-        # Through the codec: a typed end may be infinite, which strict JSON rejects.
-        return encode_numbers({'qmin': request[0], 'qmax': request[1]}, 'fit_range')
-    qmin, qmax = fitter.get_q_range()
-    full_min, full_max = fitter._full_q_range
-    if qmin == full_min and qmax == full_max:
-        return None
-    return {'qmin': float(qmin), 'qmax': float(qmax)}
+    cut = fitter._q_cut()
+    return None if cut is None else {'qmin': cut[0], 'qmax': cut[1]}
 
 
 def _current_fit_context(fitter: Any, config: dict[str, Any]) -> dict[str, Any]:
@@ -778,9 +768,7 @@ def _reject_constant(token: str) -> Any:
     )
 
 
-def _locate_data_file(
-    section: dict[str, Any], filename: str | None
-) -> tuple[str | None, list[str]]:
+def locate_data_file(section: dict[str, Any], filename: str | None) -> tuple[str | None, list[str]]:
     """Find the data file of a ``'file'`` data section: ``(path or None, paths tried)``.
 
     Relative to the analysis file *filename* first, so an analysis that travelled
@@ -817,7 +805,7 @@ def relocate_data_section(
     """
     if not isinstance(section, dict) or section.get('source') != 'file':
         return section
-    found, _tried = _locate_data_file(section, loaded_from)
+    found, _tried = locate_data_file(section, loaded_from)
     path = found or section.get('path_absolute') or ''
     return {**section, 'path_absolute': path, 'path_relative': _relative_path(path, save_to)}
 
@@ -863,7 +851,7 @@ def resolve_data(
             f'It was: {detail}'
         )
 
-    found, tried = _locate_data_file(section, filename)
+    found, tried = locate_data_file(section, filename)
     if found is not None:
         return found, section.get('dataset', 0)
     raise AnalysisFileError(

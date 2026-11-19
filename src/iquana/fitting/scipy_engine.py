@@ -24,6 +24,9 @@ try:
 except ImportError:
     SCIPY_AVAILABLE = False
 
+#: The methods ``fit_scipy`` implements.
+SCIPY_METHODS = ('least_squares', 'leastsq', 'differential_evolution')
+
 # Relative accuracy of the model curve. IQuana compiles sasmodels kernels
 # in single precision (``load_model(..., dtype='single')``), so two evaluations
 # agree to about 1e-7 and no further.
@@ -190,9 +193,7 @@ def fit_scipy(
         converged = bool(result.success)
         message = normalize_message(result.message)
     else:
-        raise ValueError(
-            f"Unknown method '{method}'. Use 'leastsq', 'least_squares', or 'differential_evolution'."
-        )
+        raise ValueError(f"Unknown method '{method}'. Use one of: {', '.join(SCIPY_METHODS)}.")
 
     # One evaluation at the optimum, so chisq and the exported residuals cannot
     # disagree. differential_evolution's result.fun is the same objective value.

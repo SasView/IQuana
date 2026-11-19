@@ -2,6 +2,7 @@ from collections.abc import Callable, Iterable
 from copy import deepcopy
 from typing import Any
 
+import bumps.fitters
 import numpy as np
 from bumps.fitters import fit as bumps_fit
 
@@ -42,6 +43,8 @@ DEFAULT_DREAM_POP = 10
 #: Optimizer used when a bumps fit names none. Shared by the single-dataset
 #: and simultaneous paths so a one-entry MultiFitter and a IQuana agree.
 DEFAULT_BUMPS_METHOD = 'amoeba'
+#: Every method name bumps accepts, from its own registry.
+BUMPS_METHODS = tuple(fitter.id for fitter in bumps.fitters.FITTERS)
 
 __all__ = [
     'DEFAULT_BUMPS_METHOD',
@@ -119,9 +122,9 @@ def _configured_budget(method: str, problem: Any, options: dict[str, Any]) -> in
     Returns None when the method is not in the registry or the budget cannot be
     derived; this feeds an informational message and must never fail a fit.
     """
-    from bumps.fitters import FITTERS
-
-    fitclass = next((candidate for candidate in FITTERS if candidate.id == method), None)
+    fitclass = next(
+        (candidate for candidate in bumps.fitters.FITTERS if candidate.id == method), None
+    )
     if fitclass is None:
         return None
 

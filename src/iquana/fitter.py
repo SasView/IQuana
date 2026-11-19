@@ -44,12 +44,14 @@ from .data.selection import (
 from .data.view import is_2d, n_points, q_magnitude, uncertainty
 from .data.weighting import WeightingSetting, apply_weighting, validate_weighting
 from .fitting import (
+    BUMPS_METHODS,
     DEFAULT_BUMPS_METHOD,
     DEFAULT_DREAM_BURN,
     DEFAULT_DREAM_POP,
     DEFAULT_DREAM_SAMPLES,
     DEFAULT_DREAM_THIN,
     SCIPY_AVAILABLE,
+    SCIPY_METHODS,
     fit_bumps,
     fit_bumps_dream,
     fit_scipy,
@@ -579,6 +581,13 @@ class IQuana:
             raise ValueError('No data loaded. Use load_data() first.')
         if qmin is None and qmax is None:
             raise ValueError('Provide qmin, qmax, or both.')
+        # An infinite end selects exactly what an open one does. It is recorded
+        # as open, so the saved request and the fit context (JSON, which has no
+        # infinity) describe the same range and a saved result still restores.
+        if qmin is not None and float(qmin) == -np.inf:
+            qmin = None
+        if qmax is not None and float(qmax) == np.inf:
+            qmax = None
 
         new_qmin, new_qmax = self._resolve_q_request(qmin, qmax)
         if new_qmin >= new_qmax:
@@ -596,8 +605,9 @@ class IQuana:
                 f'No data points in Q range [{new_qmin:g}, {new_qmax:g}]. Range unchanged.'
             )
         self._q_range_request = (
-            None if qmin is None else float(qmin),
-            None if qmax is None else float(qmax),
+            None
+            if qmin is None and qmax is None
+            else (None if qmin is None else float(qmin), None if qmax is None else float(qmax))
         )
 
         logger.info(
@@ -633,6 +643,29 @@ class IQuana:
         if self.data is None:
             return None
         return (self.data.qmin, self.data.qmax)
+
+    def _q_cut(self) -> tuple[float | None, float | None] | None:
+        """The Q cut to replay on other data, or None when the whole Q extent is used.
+
+        The request when it still describes the range in force, so an end the
+        user left open stays open. Otherwise the range in force, compared with
+        the data's own Q extent: a range set without ``set_q_range()`` (limits
+        carried by an object given to ``set_data()``, MultiFitter's copies) is
+        replayed as its two numbers rather than silently dropped. Used by
+        ``save_analysis()`` and by ``fit_series()`` for the template.
+        """
+        if self.data is None:
+            return None
+        current = self.get_q_range()
+        request = self._q_range_request
+        if request is not None and self._resolve_q_request(*request) == current:
+            return request
+        q = q_magnitude(self.data)
+        if self._selection is not None:
+            q = q[~self._selection.excluded()]
+        if current[0] <= np.nanmin(q) and current[1] >= np.nanmax(q):
+            return None
+        return float(current[0]), float(current[1])
 
     def _resolve_q_request(self, qmin: float | None, qmax: float | None) -> tuple[float, float]:
         """The range a Q request selects on the loaded data: an open end is the data's own."""
@@ -1484,11 +1517,17 @@ class IQuana:
         # so saved results and displays never expose A_/B_ on the set_models
         # path (Boundary 2 of the alias layer).
         to_display = self._param_manager.to_display_name
-        self._fit_contract.parameters = {
-            to_display(name): dict(info)
-            | {'linked_to': to_display(info['linked_to']) if info['linked_to'] else None}
-            for name, info in self._fit_contract.parameters.items()
-        }
+        translated: dict[str, dict[str, Any]] = {}
+        for name, info in self._fit_contract.parameters.items():
+            display = to_display(name)
+            # A shared parameter's target and its followers (A_sld, B_sld) carry
+            # one user-facing name. The follower must not hide the fitted target.
+            if display in translated and info.get('linked_to') is not None:
+                continue
+            translated[display] = dict(info) | {
+                'linked_to': to_display(info['linked_to']) if info['linked_to'] else None
+            }
+        self._fit_contract.parameters = translated
 
         # Covariance labels are canonical too, and land next to the parameter
         # names in the same translation (Boundary 2 of the alias layer).
@@ -1849,7 +1888,7 @@ class IQuana:
         """
         self._require_data()
         self._require_model()
-        self._check_fit_setup(engine)
+        self._check_fit_setup(engine, method)
         # Built once: the guard inspects exactly the σ the engine will divide by.
         evaluation_data = self._evaluation_data()
         self._check_fit_uncertainties(engine, evaluation_data)
@@ -1860,7 +1899,7 @@ class IQuana:
             return self._fit_bumps(evaluation_data, method or DEFAULT_BUMPS_METHOD, **kwargs)
         return self._fit_lmfit(evaluation_data, method or 'least_squares', **kwargs)
 
-    def _check_fit_setup(self, engine: str) -> None:
+    def _check_fit_setup(self, engine: str, method: str | None = None) -> None:
         """The checks of :meth:`fit` that do not need data.
 
         Shared with :meth:`fit_series`, which runs them once on the template
@@ -1868,8 +1907,8 @@ class IQuana:
         and the two entry points cannot drift apart.
 
         Raises:
-            ValueError: Unknown engine, scipy missing for ``'lmfit'``, nothing
-                free to fit, or a start value outside its bounds.
+            ValueError: Unknown engine or method, scipy missing for ``'lmfit'``,
+                nothing free to fit, or a start value outside its bounds.
             NotImplementedError: A composite model with an engine other than
                 ``'bumps'``.
         """
@@ -1877,6 +1916,11 @@ class IQuana:
             raise ValueError(f"Unknown engine '{engine}'. Use 'bumps' or 'lmfit'.")
         if engine == 'lmfit' and not LMFIT_AVAILABLE:
             raise ValueError("scipy is not installed. Use 'bumps' engine or install scipy.")
+        known = BUMPS_METHODS if engine == 'bumps' else SCIPY_METHODS
+        if method is not None and method not in known:
+            raise ValueError(
+                f"Unknown method {method!r} for engine '{engine}'. Use one of: {', '.join(known)}."
+            )
         self._check_composite_engine_support(engine)
         self._check_free_parameters()
         self._check_start_values()
@@ -2060,10 +2104,18 @@ class IQuana:
         """Checks that depend on the data's dimension, run before every fit.
 
         Raises:
-            ValueError: For an empty 2D selection, the 2D beta approximation,
-                or a polarisation channel whose magnetisation can reach zero
-                (see :meth:`_check_magnetism`).
+            ValueError: For an empty selection, the 2D beta approximation, or a
+                polarisation channel whose magnetisation can reach zero (see
+                :meth:`_check_magnetism`).
         """
+        # Both engines would "fit" an empty selection and report chi-squared = 0.
+        if not get_fit_index(evaluation_data).any():
+            raise ValueError(
+                'Every pixel is excluded; reset_mask() or widen set_q_range().'
+                if is_2d(evaluation_data)
+                else 'No data points are selected for the fit: every point is masked, '
+                'invalid or outside the Q range.'
+            )
         snapshot = self._param_manager.snapshot_fit_state()
         if not is_2d(evaluation_data):
             orientation = {
@@ -2080,8 +2132,6 @@ class IQuana:
                     stacklevel=3,
                 )
             return
-        if not get_fit_index(evaluation_data).any():
-            raise ValueError('Every pixel is excluded; reset_mask() or widen set_q_range().')
         mode = snapshot.params.get('structure_factor_mode', {}).get('value', 0)
         if mode == 1:
             raise ValueError(
@@ -2812,11 +2862,13 @@ class IQuana:
 
         Raises:
             ValueError: Before any fit, for a mistake in the call or the setup:
-                no model, nothing free to fit, no dataset found, a bad
-                placeholder match, values of the wrong length or from two
-                sources, duplicate labels, an invalid variable name, or 2D
-                template data. A problem with one dataset never raises; it
-                becomes a failed row.
+                no model, nothing free to fit, an unknown engine or method, no
+                dataset found, a bad placeholder match, values of the wrong
+                length or from two sources, duplicate labels, an invalid
+                variable name, or 2D template data. A problem with one dataset
+                never raises; it becomes a failed row. The exception is a file
+                that cannot be read for a metadata value: without its value it
+                has no place in the series.
         """
         from .series import fit_series
 
