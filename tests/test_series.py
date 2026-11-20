@@ -25,6 +25,13 @@ from iquana.series_results import SeriesRow, _assess
 
 TEMPERATURES = [20, 22, 24, 26, 28, 30]
 
+# For tests that need a fit to end exactly on a bound. bumps' default amoeba
+# stops when its simplex is small, so how close it gets depends on rounding
+# in the kernel: on the macOS runner one row stopped 0.015 Å short of max=50,
+# outside the bound tolerance (BOUND_RTOL = 1e-4). Levenberg-Marquardt clips
+# to the bound and lands on it on every platform.
+ON_BOUND_FIT = {'engine': 'bumps', 'method': 'lm'}
+
 
 def write_dataset(data, path):
     np.savetxt(path, np.column_stack([data.x, data.y, data.dy]))
@@ -501,7 +508,7 @@ def test_a_bound_hit_is_flagged_by_a_real_fit(tmp_path):
         write_dataset(simulate(60.0, seed=i), tmp_path / f'r{i}.dat')
     template = make_template()
     template.set_param('radius', value=40, min=10, max=50)
-    series = template.fit_series(str(tmp_path / 'r*.dat'))
+    series = template.fit_series(str(tmp_path / 'r*.dat'), **ON_BOUND_FIT)
     assert all('bound' in row.flag_names for row in series)
     assert 'radius at upper bound (50)' in series[0].why()
 
@@ -646,7 +653,7 @@ def test_update_replaces_a_row_and_recomputes_flags(tmp_path):
         write_dataset(simulate(60.0, seed=i), tmp_path / f'r{i}.dat')
     template = make_template()
     template.set_param('radius', value=40, min=10, max=50)
-    series = template.fit_series(str(tmp_path / 'r*.dat'))
+    series = template.fit_series(str(tmp_path / 'r*.dat'), **ON_BOUND_FIT)
     assert len(series.flagged()) == 3
 
     for row in list(series):
