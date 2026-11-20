@@ -16,6 +16,7 @@ from .modeling.polydispersity import PD_DEFAULTS, PD_DISTRIBUTION_TYPES
 from .multi_results import MultiFitReport, MultiFitResult
 from .multifit import DatasetHandle, MultiFitter
 from .results import FitResultContract, PosteriorSummary
+from .series_results import SeriesResult, SeriesRow
 from .structure import GenericScatteringCalculator
 
 adopt_logger('sinccity')
@@ -26,6 +27,8 @@ __all__ = [
     'DatasetHandle',
     'MultiFitResult',
     'MultiFitReport',
+    'SeriesResult',
+    'SeriesRow',
     'ConstraintError',
     'ExpressionError',
     'ParameterManager',

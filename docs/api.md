@@ -54,6 +54,7 @@ The main class for SANS data fitting.
         - plot_posterior_predictive
         - plot_param_correlations
         - plot_trace
+        - fit_series
         - save_results
         - save_analysis
         - load_analysis
@@ -91,6 +92,40 @@ With keyword monikers (`set_models(small='sphere', large='sphere')`) the
 prefix is the moniker (`small_radius` → `A_radius`). Parameters listed in
 `shared=` collapse to a single unprefixed name (`sld` → `A_sld` + `B_sld`);
 their prefixed aliases remain addressable for polydispersity configuration.
+
+## SeriesResult
+
+Returned by `IQuana.fit_series()`: one row per dataset of a series fit. See the
+[Series Fitting](series.md) guide for the workflow.
+
+::: iquana.series_results.SeriesResult
+    options:
+      show_root_heading: true
+      show_source: true
+      members:
+        - parameters
+        - flagged
+        - warnings
+        - table
+        - to_dataframe
+        - save_table
+        - plot
+        - plot_fits
+        - fitter
+        - update
+        - save_analysis
+        - load_analysis
+
+::: iquana.series_results.SeriesRow
+    options:
+      show_root_heading: true
+      show_source: true
+      members:
+        - estimate
+        - varied
+        - bounds
+        - usable_as_start
+        - why
 
 ## MultiFitter
 

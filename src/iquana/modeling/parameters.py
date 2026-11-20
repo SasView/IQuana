@@ -146,6 +146,12 @@ def _validated_param(name: str, saved: Any) -> dict[str, Any]:
     Bounds may be infinite (that is the default for ``scale`` and
     ``background``); a value may not, because a non-finite starting point is
     not a setting a fit can use.
+
+    A value outside its bounds is accepted with a warning. It is a state the
+    live fitter can be in (``engine='lmfit', method='leastsq'`` ignores bounds
+    and ends where it ends), so refusing it would make such an analysis, or a
+    series holding one such row, impossible to reopen. ``fit()`` still refuses
+    to *start* from it, with its own message.
     """
     if not isinstance(saved, dict):
         raise ValueError(f"Parameter '{name}' must be a mapping, got {type(saved).__name__}.")
@@ -158,8 +164,11 @@ def _validated_param(name: str, saved: Any) -> dict[str, Any]:
     if low > high:
         raise ValueError(f"Parameter '{name}': min ({low:g}) is above max ({high:g}).")
     if not low <= value <= high:
-        raise ValueError(
-            f"Parameter '{name}': value {value:g} is outside its bounds [{low:g}, {high:g}]."
+        warnings.warn(
+            f"Parameter '{name}': the saved value {value:g} is outside its bounds "
+            f'[{low:g}, {high:g}]. It is restored as saved; widen the bounds or move '
+            'the value inside them before fitting again.',
+            stacklevel=2,
         )
     if not isinstance(saved['vary'], bool):
         raise ValueError(f"Parameter '{name}': 'vary' must be true or false.")
@@ -1191,6 +1200,18 @@ class ParameterManager:
             List of parameter names with vary=True
         """
         return [name for name, info in self.params.items() if info['vary']]
+
+    def free_parameter_names(self) -> list[str]:
+        """The optimizer's dimensions, named as a fit result names them.
+
+        Varied parameters that are not link followers, then active varied
+        polydispersity widths (``radius_pd``), in user-facing names. Exactly
+        the entries a fit reports with ``fixed=False``.
+        """
+        snapshot = self.snapshot_fit_state()
+        return [self.to_display_name(name) for name in snapshot.varying_params] + [
+            self.to_display_name(f'{base}_pd') for base in snapshot.varying_pd_params
+        ]
 
     def varying_params_without_range(self) -> list[str]:
         """Describe every varying parameter whose bounds leave nothing to fit.

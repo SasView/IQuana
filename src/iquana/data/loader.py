@@ -166,11 +166,21 @@ def _load_all(filename: str) -> list[Any]:
     loader = Loader()
     try:
         data_list = loader.load(filename)
-        if not data_list:
-            raise ValueError(f'No data loaded from {filename}')
-        return data_list
     except Exception as e:
         raise ValueError(f'Failed to load data from {filename}: {str(e)}') from e
+    # sasdata's text reader "loads" any text file, unreadable ones as a dataset
+    # whose columns are None; that must fail here, not deep inside numpy.
+    if not any(_has_points(data) for data in data_list or []):
+        raise ValueError(
+            f'Failed to load data from {filename}: no data points could be read. '
+            'Is it a SANS data file (columns Q, I, dI and optionally dQ)?'
+        )
+    return data_list
+
+
+def _has_points(data: Any) -> bool:
+    """True when *data* holds at least one finite intensity."""
+    return bool(np.isfinite(intensity(data)).any())
 
 
 def _dataset_names(data: Any) -> list[str]:

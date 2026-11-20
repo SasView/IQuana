@@ -48,6 +48,7 @@ nav:
   - Example Data: examples.md
   - User Guide: usage.md
   - Simultaneous Fitting: multifit.md
+  - Series Fitting: series.md
   - Custom Models: custom_models.md
   - API Reference: api.md
   - Developer Guide: developer.md
