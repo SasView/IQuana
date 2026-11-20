@@ -36,6 +36,7 @@ A flexible, model-agnostic Python template for fitting Small-Angle Neutron Scatt
 - **Theory Preview**: See the model at the current parameters before fitting — `plot_model()` for data, curve and residuals, `calculate()` for the intensities on any Q grid, and `compare()` to overlay several parameter sets
 - **Interactive Visualization**: Automatic plotting of data, fitted model, and residuals with Plotly
 - **Simultaneous Fitting**: Fit several datasets together with shared or related parameters via `MultiFitter` — contrast variation, temperature series and multi-configuration data, with per-dataset models, Q ranges and resolution, plus constraints such as `'0.8 * h2o.scale'`
+- **Series Fitting**: Fit a temperature scan, kinetic run or concentration series in one call — `fitter.fit_series('scan/T_{temperature}K.dat')` — with the configured fitter as the template, a table and trend plots of the parameters against the series variable, flags for the rows that need a look, and drill-down into any row
 - **Bayesian Analysis**: Posterior sampling with BUMPS DREAM (MCMC) plus corner, marginal, predictive-band, correlation, and trace plots
 - **P(r) Inversion**: Model-free pair distance distribution analysis (indirect Fourier transform) via `pr_inversion` — D_max exploration, automatic regularization/term selection, and Rg/I(0)/positivity diagnostics
 - **Fit-Quality Reporting**: Reduced χ² alongside raw χ², point and parameter counts, covariance/correlation matrices, a convergence verdict and a warning when a fitted parameter rests on a bound — all via `fitter.get_fit_report()`, which renders as a table in a notebook, as text, or as Markdown
@@ -289,6 +290,31 @@ See the [Simultaneous Fitting guide](docs/multifit.md) for choosing what to
 share, how constraint bounds are enforced, and what dataset weights mean for
 the reported uncertainties.
 
+## Series Fitting
+
+Fit many datasets one by one with the setup of one configured fitter, and get
+the parameters against the series variable:
+
+```python
+fitter.load_data('scan/T_020K.dat')
+fitter.set_model('sphere')
+fitter.set_param('radius', value=45, min=10, max=100, vary=True)
+fitter.fit()                                         # one good fit first
+
+series = fitter.fit_series('scan/T_{temperature}K.dat')
+series                                               # table: one row per file
+series.plot('radius')                                # radius against temperature
+series.flagged()                                     # failed, on a bound, jumped
+bad = series.fitter(16)                              # any row as a normal IQuana
+series.save_analysis('scan.json')
+```
+
+The `{temperature}` placeholder reads the value from each file name; a list
+(`values=[...]`) or a metadata path (`values='sample.temperature'`) work too.
+Each fit starts from the previous good one unless `start='template'`. One bad
+file becomes a failed row rather than stopping the run. See the
+[Series Fitting guide](docs/series.md).
+
 ## Bayesian Analysis
 
 Sample the full posterior distribution of the varying parameters with the
@@ -345,6 +371,7 @@ move (`min < max`); the fit names any that do not.
 - [notebooks/resolution_control.ipynb](notebooks/resolution_control.ipynb) — explicit resolution (smearing) control: the four modes, what each hands sasmodels, and what ignoring resolution costs.
 - [notebooks/sasmodels-basic.ipynb](notebooks/sasmodels-basic.ipynb) — the same kind of fit done directly with sasmodels and BUMPS, without IQuana, for comparison.
 - [notebooks/simultaneous_fitting.ipynb](notebooks/simultaneous_fitting.ipynb) — fitting several datasets together with `MultiFitter`: contrast variation, shared parameters, constraints, and joint diagnostics.
+- [notebooks/series_fitting.ipynb](notebooks/series_fitting.ipynb) — a temperature scan fitted with `fit_series()`: the table, flags and trend plot, a chained run checked against independent fits, repairing a row, saving and reopening the series.
 - [notebooks/magnetic_2d_fitting.ipynb](notebooks/magnetic_2d_fitting.ipynb) — 2D detector images and polarised SANS: masks, heatmaps, beam presets, magnetic fits of simulated and measured SANSPOL data.
 - [notebooks/four_form_factors.ipynb](notebooks/four_form_factors.ipynb) — fitting a sum of four form factors against one dataset: what to fix, why a global optimizer is needed, and how to read the parameter correlations that remain.
 - [notebooks/structure_calculator.ipynb](notebooks/structure_calculator.ipynb) — the Generic Scattering Calculator: I(q) from SLD, PDB and VTK structures, the 3D point view, a check against the analytic sphere, fitting the computed curve, and a contrast series fitted with `MultiFitter`.

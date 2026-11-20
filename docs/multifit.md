@@ -422,5 +422,8 @@ Not yet supported, and intentionally so until each has its own numerical tests:
   `save_analysis()` for a joint analysis is planned once the result schema has
   settled. Keep the configuration in a notebook or script meanwhile.
 - **Inequality constraints, fitted error scales, automatic rebalancing, 2D and
-  SESANS data, batch fitting** (which is a different operation — N independent
-  fits, not one).
+  SESANS data.**
+
+Fitting N datasets independently with one setup (a temperature scan, a kinetic
+run) is a different operation: N fits, not one. That is
+[`fit_series()`](series.md).

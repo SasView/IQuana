@@ -687,6 +687,23 @@ normalizes it so it is fit-ready.
 See `examples/data_operations_example.py` and
 `notebooks/data_operations_demo.ipynb` for a complete walkthrough.
 
+### Series Fitting
+
+A temperature scan, a kinetic run or a concentration series: many datasets, one
+model, and the parameters wanted against the series variable. Configure and
+fit one dataset, then hand the fitter a file pattern:
+
+```python
+series = fitter.fit_series('scan/T_{temperature}K.dat')
+series.plot('radius')
+series.flagged()
+```
+
+Each dataset is fitted independently by `fit()` on a copy of the configured
+fitter, so the model, bounds, resolution, weighting and Q cut reach every one.
+See the [Series Fitting](series.md) guide for the value sources, ordering,
+start values, flags, repairing a row and saving the series.
+
 ### Simultaneous Fitting of Several Datasets
 
 Contrast variation, a temperature or concentration series, and one sample
