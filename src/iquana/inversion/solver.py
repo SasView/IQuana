@@ -7,7 +7,8 @@ from typing import Any
 
 import numpy as np
 
-from ..data.loader import get_fit_index, has_real_data
+from ..data.prepare import InsufficientDataError, _PreparedData
+from ..data.prepare import prepare_1d as _prepare_data
 from .basis import (
     _ortho_derived,
     _ortho_second_derivative,
@@ -15,123 +16,12 @@ from .basis import (
     _pr_curve_and_band,
     _sasview_reg_term,
 )
-from .result import InsufficientDataError, PrResult
+from .result import PrResult
 
 DEFAULT_N_TERMS = 10
 DEFAULT_R_POINTS = 101
 REGULARIZERS = ('corrected', 'sasview')
 SASVIEW_N_REG = 20
-FABRICATED_SIGMA_RELATIVE = 0.05
-FABRICATED_SIGMA_FLOOR_FRACTION = 0.01
-
-# ---------------------------------------------------------------------------
-# Data preparation (non-mutating)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class _PreparedData:
-    """Validated arrays plus the full-length accepted mask, built once per call."""
-
-    q: np.ndarray
-    intensity: np.ndarray
-    sigma: np.ndarray
-    accepted: np.ndarray
-    uncertainties_fabricated: bool
-    n_dropped_points: int
-
-
-def _prepare_data(data: Any) -> _PreparedData:
-    """Validate a dataset and build the accepted-point arrays without mutating it.
-
-    Accepts a general ``Data1D`` — normalized (with ``qmin``/``qmax``/``mask``)
-    or raw. For raw data no q-cut is invented: all finite, unmasked points are
-    used. Points with non-finite q, I or sigma and ``q == 0`` points are
-    dropped with a warning.
-    """
-    if getattr(data, 'qx_data', None) is not None:
-        raise TypeError('P(r) inversion supports 1D data only, got 2D data.')
-    if getattr(data, 'isSesans', False):
-        raise TypeError('P(r) inversion does not support SESANS data.')
-
-    x_raw = getattr(data, 'x', None)
-    y_raw = getattr(data, 'y', None)
-    if x_raw is None or y_raw is None:
-        raise ValueError('Dataset has no data: x and y must be populated.')
-    x = np.asarray(x_raw, dtype=float)
-    y = np.asarray(y_raw, dtype=float)
-    if x.size == 0 or y.size == 0:
-        raise ValueError('Dataset has no data: x and y must be populated.')
-    if x.size != y.size:
-        raise ValueError(f'Length mismatch: x has {x.size} points but y has {y.size}.')
-
-    dy_raw = getattr(data, 'dy', None)
-    has_dy = has_real_data(dy_raw)
-    if has_dy and np.asarray(dy_raw).size != x.size:
-        raise ValueError(
-            f'Length mismatch: x has {x.size} points but dy has {np.asarray(dy_raw).size}.'
-        )
-
-    if np.any(x[np.isfinite(x)] < 0):
-        raise ValueError('Dataset contains negative q values; q must be non-negative.')
-
-    for attr in ('dxl', 'dxw'):
-        if has_real_data(getattr(data, attr, None)):
-            warnings.warn(
-                'Dataset carries slit-smearing resolution columns (dxl/dxw); '
-                'P(r) inversion does not support smearing and will treat the '
-                'data as unsmeared. Results for USANS-type data will be wrong.',
-                stacklevel=3,
-            )
-            break
-
-    if getattr(data, 'qmin', None) is not None and getattr(data, 'qmax', None) is not None:
-        base = get_fit_index(data)
-    else:
-        base = ~np.isnan(y)
-        mask = getattr(data, 'mask', None)
-        if mask is not None and np.asarray(mask).size == y.size:
-            base &= ~np.asarray(mask, dtype=bool)
-
-    if has_dy:
-        sigma = np.asarray(dy_raw, dtype=float)
-        fabricated = False
-    else:
-        finite_i = np.abs(y[np.isfinite(y)])
-        median_scale = float(np.median(finite_i)) if finite_i.size else 0.0
-        sigma = np.maximum(
-            FABRICATED_SIGMA_RELATIVE * np.abs(y),
-            FABRICATED_SIGMA_FLOOR_FRACTION * median_scale,
-        )
-        fabricated = True
-        warnings.warn(
-            'Dataset has no intensity uncertainties (dI); fabricated '
-            f'sigma = max({FABRICATED_SIGMA_RELATIVE}*|I|, '
-            f'{FABRICATED_SIGMA_FLOOR_FRACTION}*median|I|) will be used. '
-            'Chi-squared-based diagnostics are not interpretable.',
-            stacklevel=3,
-        )
-
-    accepted = base & np.isfinite(x) & np.isfinite(y) & np.isfinite(sigma) & (sigma > 0) & (x > 0)
-    n_dropped = int(base.sum()) - int(accepted.sum())
-    if n_dropped > 0:
-        warnings.warn(
-            f'{n_dropped} point(s) dropped from the inversion (non-finite q/I/sigma, '
-            'non-positive sigma, or q == 0).',
-            stacklevel=3,
-        )
-    if not accepted.any():
-        raise InsufficientDataError('No usable data points remain after validation.')
-
-    return _PreparedData(
-        q=x[accepted],
-        intensity=y[accepted],
-        sigma=sigma[accepted],
-        accepted=accepted,
-        uncertainties_fabricated=fabricated,
-        n_dropped_points=n_dropped,
-    )
-
 
 # ---------------------------------------------------------------------------
 # Matrix assembly and SVD solve

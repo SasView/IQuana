@@ -2,82 +2,37 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.6.2] - 2026-11-20
+## [0.6.0] - 2026-11-20
 
 ### Added
 
-- **Series fitting.** `IQuana.fit_series()` fits many 1D datasets one by one
-  with the setup of a configured fitter (the template) and returns a
-  `SeriesResult`: a table of the varied parameters, their uncertainties and
-  reduced χ² against a series variable such as temperature, time or
-  concentration. See `docs/series.md`.
-  - The datasets are a file pattern with `*` and an optional `{name}`
-    placeholder that reads the series value from each file name
-    (`'scan/T_{temperature}K.dat'`), a list of paths and in-memory datasets,
-    or a single path. The value can also be a list (`values=[...]`) or a
-    metadata path read from every file (`values='sample.temperature'`).
-  - A pattern is sorted by value, or by natural file name with
-    `order='name'` for hysteresis loops and cool-then-heat scans.
-  - `start='previous'` (default) starts each fit from the last usable row;
-    `start='template'` starts every fit from the template.
-  - A dataset that fails to load or fit becomes a failed row and the run
-    goes on; Ctrl-C returns the rows finished so far.
-  - Flags (`failed`, `unconverged`, `out_of_bounds`, `bound`, `jump`) mark the
-    rows to look at; `series.flagged()` lists them with the reason.
-  - `series.plot()` draws the parameters against the variable;
-    `series.plot_fits()` overlays data and fits for chosen rows.
-  - `series.fitter(row)` opens any row as a normal `IQuana`, and
-    `series.update(row, fitter)` writes a repaired fit back.
-  - `series.save_analysis()` / `SeriesResult.load_analysis()` store each row
-    as a complete single analysis; `series.table()`, `to_dataframe()` and
-    `save_table()` export the numbers.
-  - Walkthroughs: `examples/series_fitting_example.py` and
-    `notebooks/series_fitting.ipynb`.
-
-### Changed
-
-- `fit()` refuses a model with no free parameter before calling the engine,
-  with a message that says what to set. It used to fail inside bumps with
-  `max() iterable argument is empty`.
-- `fit()` refuses an unknown `method=` for the chosen engine before touching
-  the data, and a dataset with no point selected (all masked, invalid or
-  outside the Q range). Both engines used to "fit" such a dataset and report
-  chi-squared = 0.
-- `set_q_range()` treats an infinite end as open, so `qmax=float('inf')`
-  saves and reloads with its fit result.
-- `save_analysis()` records the Q range as it was requested: an end left
-  open in `set_q_range()` is written as `null` and resolves against the data
-  the analysis is reloaded with. `set_q_range(qmin=0.03)` on data ending at
-  0.2 used to be saved as `qmax = 0.2`, which cut a wider dataset given with
-  `load_analysis(path, data=...)`. Files written before keep their two
-  numbers. A range that did not come from `set_q_range()` (limits carried by
-  a dataset given to `set_data()`) is saved too; it used to be lost, and the
-  reopened analysis dropped its result.
-- `load_analysis()` accepts a saved parameter value outside its bounds with a
-  warning, instead of refusing the file. `method='leastsq'` ignores bounds and
-  can end there, so such analyses could not be reopened. `fit()` still refuses
-  to start from such a value.
-- The fit report is only built when it will be printed, so fits under
-  `set_verbosity('quiet')` no longer pay for rendering it.
-
-### Fixed
-
-- `load_data()` on a text file with no readable data points raises a
-  `ValueError` that names the file, instead of a `TypeError` from numpy
-  (`ufunc 'isnan' not supported`).
-- A fit with a parameter shared between components
-  (`set_models(..., shared=['sld'])`) reported that parameter as fixed: its
-  linked copy overwrote the fitted entry in the result.
-
-## [0.6.0] - 2026-11-12
-
-This release adds 2D data and magnetic (polarised) SANS
-([#21](https://github.com/SasView/IQuana/issues/21)), and the Generic
-Scattering Calculator. 1D analyses behave as before, and analysis files
-written by 0.5 keep their fit results.
-
-### Added
-
+- **Model-free first-look analysis**, `iquana.modelfree` (roadmap item 3.2):
+  - `guinier()`: Rg and I(0), or the cross-section of a rod (`kind='rod'`) or
+    the thickness of a sheet (`kind='sheet'`). Without `qmax` the window grows
+    until q·R reaches `qr_limit` (1.3 for the standard law). Warns when the
+    data do not reach the Guinier plateau, and when ln I bends down
+    (repulsion) or up (elongation, polydispersity, aggregation) beyond what a
+    compact particle shows.
+  - `power_law()`: I − B = A·q⁻ⁿ over a window, with a fixed background (log
+    fit, with a `low_signal` warning near the background) or a fitted one.
+  - `porod()`: the Porod constant and the flat background in one fit, with a
+    free-exponent check, and `specific_surface(delta_sld)`.
+  - `kratky()`: q²·I, or the dimensionless form with the Guinier-law peak
+    marked.
+  - `invariant()`: Q* with Guinier, Porod or power-law extrapolations; the
+    volume fraction (both Babinet roots) from `delta_sld`; the specific
+    surface by the Porod route and, with a known `volume_fraction`, by the
+    scale-free route. The uncertainty is propagated once from the intensities
+    through every fit, so shared points and a fitted background count once.
+  - Every result has `format_summary()`, `to_dict()`, `save_csv()`, `plot()`
+    and named warnings; the three fits also have `report()`, a `FitReport`
+    like a model fit's. Chained calls must use one background and one
+    dataset, and refuse otherwise. Slit-smeared, 2D and SESANS data are
+    refused.
+  - `notebooks/first_look.ipynb` and `examples/modelfree_example.py`.
+- The result types and `ModelFreeError` are exported from the package root.
+- `FitReport.notes`: free-text notes, rendered in every format and included
+  in `to_dict()`. Reports without notes are unchanged.
 - **2D data.** `load_data()` and `set_data()` accept 2D detector images.
   `plot_model()` and `plot_results()` draw data, model and residual
   heatmaps; `fit()`, `fit_bayesian()`, `calculate()`, `save_results()`,
@@ -128,6 +83,11 @@ written by 0.5 keep their fit results.
 
 ### Changed
 
+- P(r) inversion and the model-free analyses share one data preparation,
+  `iquana.data.prepare`. P(r) behaves as before; its "points dropped"
+  warning now names the P(r) inversion. `InsufficientDataError` is now
+  defined there (`__module__` is `iquana.data.prepare`); every import path
+  still works.
 - The analysis file schema is version 3. It adds `data.dimension`, a `mask`
   section, the arrays of an in-memory 1D dataset (`data.arrays`) and, only
   when used, `configuration.magnetism` and `resolution.accuracy`. Versions 1

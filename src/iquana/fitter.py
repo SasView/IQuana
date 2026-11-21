@@ -180,8 +180,9 @@ class IQuana:
     - User-friendly parameter management
 
     For model-free P(r) inversion (pair distance distribution analysis), see
-    :mod:`iquana.inversion` — it operates directly on datasets
-    (``fitter.data`` or ``data_ops`` results) and needs no model setup.
+    :mod:`iquana.inversion`, and for Guinier, Porod, Kratky and invariant
+    analysis :mod:`iquana.modelfree`. Both operate directly on datasets
+    (``fitter.data`` or ``data_ops`` results) and need no model setup.
 
     Example:
         >>> fitter = IQuana()

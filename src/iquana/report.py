@@ -129,6 +129,7 @@ class FitReport:
     cov_source: str | None = None
     on_bounds: list[tuple[str, str]] = field(default_factory=list)
     posterior: PosteriorSummary | None = None
+    notes: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.cov is not None:
@@ -308,6 +309,8 @@ class FitReport:
         quality = self._quality_rows(symbol)
         width = max(len(label) for label, _ in quality)
         lines.extend(f'{label:<{width}}  {value}' for label, value in quality)
+        if self.notes:
+            lines.extend(['', 'Notes:', *(f'  - {note}' for note in self.notes)])
 
         rows = self._parameter_rows()
         if rows:
@@ -365,6 +368,8 @@ class FitReport:
             f'| {escape_markdown_cell(label)} | {escape_markdown_cell(value)} |'
             for label, value in self._quality_rows(symbol)
         )
+        if self.notes:
+            out.extend(['', *(f'- {escape_markdown_cell(note)}' for note in self.notes)])
 
         rows = self._parameter_rows(arrow='->')
         if rows:
@@ -425,6 +430,9 @@ class FitReport:
                 f'<td style="{cell}">{escape_html_cell(value)}</td></tr>'
             )
         parts.append('</table>')
+        if self.notes:
+            items = ''.join(f'<li>{escape_html_cell(note)}</li>' for note in self.notes)
+            parts.append(f'<ul>{items}</ul>')
 
         rows = self._parameter_rows()
         if rows:
@@ -534,6 +542,7 @@ class FitReport:
             ],
             'on_bounds': [{'parameter': name, 'bound': side} for name, side in self.on_bounds],
             'posterior': posterior,
+            'notes': list(self.notes),
         }
         return json_safe(payload)
 

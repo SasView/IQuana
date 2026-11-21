@@ -38,6 +38,7 @@ A flexible, model-agnostic Python template for fitting Small-Angle Neutron Scatt
 - **Simultaneous Fitting**: Fit several datasets together with shared or related parameters via `MultiFitter` — contrast variation, temperature series and multi-configuration data, with per-dataset models, Q ranges and resolution, plus constraints such as `'0.8 * h2o.scale'`
 - **Series Fitting**: Fit a temperature scan, kinetic run or concentration series in one call — `fitter.fit_series('scan/T_{temperature}K.dat')` — with the configured fitter as the template, a table and trend plots of the parameters against the series variable, flags for the rows that need a look, and drill-down into any row
 - **Bayesian Analysis**: Posterior sampling with BUMPS DREAM (MCMC) plus corner, marginal, predictive-band, correlation, and trace plots
+- **Model-Free First Look**: Guinier (Rg, I(0), rod and sheet cross-sections) with an automatic window and q·Rg check, Porod constant and background, Kratky plots, power-law slopes and the scattering invariant with volume fraction and specific surface, via `modelfree` — each with a report like a model fit's, and numbers ready for `set_param()`
 - **P(r) Inversion**: Model-free pair distance distribution analysis (indirect Fourier transform) via `pr_inversion` — D_max exploration, automatic regularization/term selection, and Rg/I(0)/positivity diagnostics
 - **Fit-Quality Reporting**: Reduced χ² alongside raw χ², point and parameter counts, covariance/correlation matrices, a convergence verdict and a warning when a fitted parameter rests on a bound — all via `fitter.get_fit_report()`, which renders as a table in a notebook, as text, or as Markdown
 - **Result Export**: Save fitted parameters and curves to CSV files
@@ -315,6 +316,31 @@ Each fit starts from the previous good one unless `start='template'`. One bad
 file becomes a failed row rather than stopping the run. See the
 [Series Fitting guide](docs/series.md).
 
+## Model-Free First Look
+
+Before choosing a model: the background, Rg, the Porod constant and the
+invariant, straight from the data.
+
+```python
+from iquana import modelfree
+
+p = modelfree.porod(fitter.data, qmin=0.15)                    # Kp and the background
+g = modelfree.guinier(fitter.data, background=p.background)    # Rg, I(0), automatic window
+print(g.report())                                              # same form as a model fit's
+
+modelfree.kratky(fitter.data, guinier=g).plot()                # dimensionless Kratky
+inv = modelfree.invariant(fitter.data, low_q=g, high_q=p, delta_sld=2.5)
+print(inv.format_summary())                                    # Q*, volume fraction, S/V
+
+fitter.set_param('radius', value=g.sphere_radius)              # starting values
+fitter.set_param('background', value=p.background)
+```
+
+Each result carries named warnings (`result.warning_codes`): a window past the
+q·Rg limit, curvature in the Guinier region, an exponent that is not 4 in the
+Porod window, a large extrapolated share of Q*. See the
+[user guide](docs/usage.md#model-free-analysis).
+
 ## Bayesian Analysis
 
 Sample the full posterior distribution of the varying parameters with the
@@ -367,6 +393,7 @@ move (`min < max`); the fit names any that do not.
 - [notebooks/composite_models.ipynb](notebooks/composite_models.ipynb) — several models against one dataset with `set_models()`: per-component curves and shared parameters.
 - [notebooks/data_operations_demo.ipynb](notebooks/data_operations_demo.ipynb) — dataset arithmetic: background subtraction, rescaling and combining datasets with propagated uncertainties, then fitting the result.
 - [notebooks/bayesian_sampling.ipynb](notebooks/bayesian_sampling.ipynb) — Bayesian posterior sampling API (`fit_bayesian()`) and the associated posterior plots.
+- [notebooks/first_look.ipynb](notebooks/first_look.ipynb) — model-free first look: Porod, Guinier, Kratky, the invariant and a power law on simulated spheres with known answers, then on measured apoferritin, where the checks matter.
 - [notebooks/pr_inversion_demo.ipynb](notebooks/pr_inversion_demo.ipynb) — model-free P(r) inversion: D_max exploration, automatic inversion, and diagnostics.
 - [notebooks/resolution_control.ipynb](notebooks/resolution_control.ipynb) — explicit resolution (smearing) control: the four modes, what each hands sasmodels, and what ignoring resolution costs.
 - [notebooks/sasmodels-basic.ipynb](notebooks/sasmodels-basic.ipynb) — the same kind of fit done directly with sasmodels and BUMPS, without IQuana, for comparison.

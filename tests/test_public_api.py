@@ -42,8 +42,28 @@ class TestPublicApi(unittest.TestCase):
             'PrEstimationError',
             'GenericScatteringCalculator',
             'structure',
+            'modelfree',
+            'ModelFreeResult',
+            'ModelFreeFit',
+            'GuinierResult',
+            'PowerLawResult',
+            'PorodResult',
+            'InvariantResult',
+            'KratkyCurve',
+            'ModelFreeError',
         }
         self.assertLessEqual(expected, set(iquana.__all__))
+
+    def test_modelfree_api(self):
+        from iquana import modelfree
+
+        for name in ('guinier', 'power_law', 'porod', 'kratky', 'invariant'):
+            self.assertTrue(callable(getattr(modelfree, name)), name)
+        self.assertTrue(issubclass(iquana.ModelFreeError, ValueError))
+        self.assertIs(modelfree.InsufficientDataError, iquana.InsufficientDataError)
+        self.assertTrue(issubclass(iquana.GuinierResult, iquana.ModelFreeFit))
+        self.assertFalse(issubclass(iquana.InvariantResult, iquana.ModelFreeFit))
+        self.assertFalse(hasattr(iquana.KratkyCurve, 'report'))
 
     def test_module_aliases_resolve_to_canonical_modules(self):
         from iquana import data_ops, pr_inversion

@@ -747,6 +747,129 @@ weights do to the reported uncertainties, and the CSV export. A runnable
 walkthrough is in `examples/simultaneous_fitting_example.py` and
 `notebooks/simultaneous_fitting.ipynb`.
 
+### Model-Free Analysis
+
+`iquana.modelfree` answers the first questions about a curve before any model
+is chosen: the background, Rg, the Porod constant, the invariant. Like P(r)
+inversion, it uses no sasmodels kernel and works on datasets directly
+(`fitter.data` or `data_ops` results).
+
+```python
+from iquana import data_ops, modelfree
+
+data = data_ops.load('sample.csv')
+
+# Background first, so every later step subtracts the same level.
+p = modelfree.porod(data, qmin=0.15)                    # I = Kp/q^4 + B
+g = modelfree.guinier(data, background=p.background)    # Rg, I(0), automatic window
+k = modelfree.kratky(data, guinier=g)                   # takes g's background
+inv = modelfree.invariant(data, low_q=g, high_q=p, delta_sld=2.5)
+pl = modelfree.power_law(data, qmin=0.05, qmax=0.2)     # slope over a window
+
+print(g.format_summary())
+g.report()                 # a FitReport, like a model fit's
+g.plot(data)               # the dataset is passed explicitly
+g.save_csv('guinier.csv')
+
+fitter.set_param('radius', value=g.sphere_radius)       # starting values
+fitter.set_param('background', value=p.background)
+```
+
+| Function | Result |
+|---|---|
+| `guinier(data, qmin=None, qmax=None, kind='standard', qr_limit=None, background=0.0, min_points=5)` | `GuinierResult`: `radius`, `intercept`; `rg`, `i0`, `sphere_radius` (standard), `cross_section_radius` (rod), `thickness` (sheet) |
+| `power_law(data, qmin, qmax, background=0.0, fit_background=False)` | `PowerLawResult`: `exponent`, `prefactor`, `background` |
+| `porod(data, qmin, qmax=None)` | `PorodResult`: `porod_constant`, `background`, `free_exponent`, `specific_surface(delta_sld)` |
+| `kratky(data, guinier=None, background=None)` | `KratkyCurve`: `x`, `y`, `dy`, `peak_position`, `peak_height` |
+| `invariant(data, low_q=None, high_q=None, background=None, delta_sld=None, volume_fraction=None, qmin=None, qmax=None)` | `InvariantResult`: `qstar` and its three parts, `volume_fraction`, `specific_surface_porod`, `specific_surface_invariant`, `scale_check` |
+
+Every result has `format_summary()`, `to_dict()`, `save_csv()`, `plot()` and
+`warnings`, a list of `(code, message)` pairs that are also emitted through
+Python's `warnings`. The three fits also have `report()`.
+
+#### Guinier
+
+| `kind` | Law (background subtracted) | Valid for | Result |
+|---|---|---|---|
+| `'standard'` | ln I = ln I(0) − q²Rg²/3 | any particle, q below 1/Rg | Rg, I(0) |
+| `'rod'` | ln(q·I) = ln c − q²Rc²/2 | 2π/L ≲ q ≲ 1/Rc | cross-section Rc |
+| `'sheet'` | ln(q²·I) = ln c − q²Rt² | 2π/D ≲ q ≲ 1/Rt | Rt, thickness √12·Rt |
+
+The standard law applies to the whole particle whatever its shape, elongated
+ones included. `'rod'` and `'sheet'` measure only the small dimension, and
+need an explicit `qmin` above 2π/L.
+
+Without `qmax`, the window grows from the lowest point until q_max·R reaches
+`qr_limit` (1.3 for the standard law; 1.0 is safer for elongated or flexible
+particles), and stops at the first violation. The low-Q edge is never trimmed:
+to cut an upturn, pass `qmin`. Checks:
+
+- `qr_limit`: an explicit `qmax` reaches past the limit.
+- `low_q_coverage`: q_min·Rg > 1, so the data do not reach the Guinier
+  plateau, and a larger structure may be present that the data cannot show.
+- `curvature_negative` / `curvature_positive`: the window's ln I is fitted as
+  a quadratic in q², and its curvature c is compared with what real particles
+  show (sphere −0.009, Gaussian coil +0.025, thin rod +0.028). Below −0.03 the
+  intensity turns down at low Q (repulsion?); above +0.015 it bends up, from
+  elongation, flexibility, polydispersity or aggregation, which curvature
+  cannot tell apart.
+- `few_points`: fewer than 8 points in the window.
+
+#### Porod and power law
+
+`porod()` fits I = Kp·q⁻⁴ + B as a line of q⁴·I against q⁴, giving the Porod
+constant and the flat background in one step. A free three-parameter power
+law over the same window checks the exponent (`porod_exponent` when it is not
+4: below 4 a rough or fractal surface, above 4 a diffuse interface).
+`specific_surface(delta_sld)` returns S/V = Kp × 10⁴/(2π·Δρ²) in Å⁻¹.
+
+`power_law()` with a fixed background fits a line in log-log space and drops
+points with I − B ≤ 0; near the background level that fit is biased, and the
+`low_signal` warning recommends `fit_background=True`, a fit in linear space.
+
+#### Kratky
+
+The dimensionless form (q·Rg)²·I/I(0) against q·Rg marks q·Rg = √3 and
+height 3/e = 1.104, the peak of the Guinier law and the usual reference for
+globular proteins. A homogeneous sphere peaks below and to the left of it, at
+(1.612, 1.027); a flexible chain rises to a plateau and reports no peak.
+
+#### Invariant
+
+Q* = ∫q²(I − B)dq is the trapezoid between the first and last measured points,
+plus a Guinier or power-law (n < 3) extrapolation below and a Porod or
+power-law (n > 3) one above. The summary gives each part's share of Q*, and
+warns when the extrapolations are large.
+
+| Given | Derived |
+|---|---|
+| `delta_sld` | φ(1−φ) = Q* × 10⁴/(2π²·Δρ²) and both roots (the data cannot say which phase is the minority); with a Porod result, S/V = Kp × 10⁴/(2π·Δρ²). Both need intensity in cm⁻¹. |
+| `volume_fraction` | With a Porod result, S/V = π·φ(1−φ)·Kp/Q*, which needs neither absolute scale nor contrast. |
+| both | Both S/V values and `scale_check`, the measured φ(1−φ) over the expected one. |
+
+The uncertainty of Q* is propagated once from the dataset's intensities,
+through the trapezoid and through each fit's sensitivity to the same points.
+The parts share data, so their individual errors do not add in quadrature.
+`delta_sld` and `volume_fraction` are taken as exact.
+
+Things to know:
+
+- **Units.** Q in Å⁻¹. `delta_sld` is in 10⁻⁶ Å⁻², like every SLD in IQuana;
+  a value outside 10⁻³ to 100 is refused as a likely unit mistake.
+- **One background, one dataset.** `kratky()` and `invariant()` inherit the
+  background of their input results, and raise when results disagree on it
+  or come from another dataset. Fit Porod first and pass its background on.
+- **Q window.** An explicit `qmin`/`qmax` replaces the dataset's own limit
+  (from `fitter.set_q_range()`) on that side; the mask always applies.
+- **Missing dI** fabricates uncertainties as P(r) does, flags the result, and
+  scales the fit uncertainties by the reduced χ².
+- **Refused:** slit-smeared data (the results change in kind, and even Rg is
+  off by 10 to 40 % for elongated particles), 2D and SESANS data. Pinhole dQ
+  is ignored, with a `dq_ignored` warning.
+
+See `examples/modelfree_example.py` and `notebooks/first_look.ipynb` for a
+walkthrough.
+
 ### P(r) Inversion
 
 The `iquana.inversion` module recovers the real-space pair distance

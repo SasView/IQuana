@@ -369,6 +369,31 @@ estimation and D_max exploration.
         - REGULARIZERS
         - SASVIEW_N_REG
 
+## modelfree
+
+Model-free first-look analysis: Guinier, power law, Porod, Kratky and the
+scattering invariant. The result types and `ModelFreeError` are also exported
+from the package root.
+
+::: iquana.modelfree
+    options:
+      show_root_heading: true
+      show_source: true
+      members:
+        - guinier
+        - power_law
+        - porod
+        - kratky
+        - invariant
+        - ModelFreeResult
+        - ModelFreeFit
+        - GuinierResult
+        - PowerLawResult
+        - PorodResult
+        - KratkyCurve
+        - InvariantResult
+        - ModelFreeError
+
 ## GenericScatteringCalculator and `iquana.structure`
 
 The orientationally averaged I(q) of a real-space structure (PDB, GRO, SLD or

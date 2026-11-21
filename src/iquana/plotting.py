@@ -1128,3 +1128,247 @@ def plot_dmax_scan(scan, quantity: str = 'rg', show: bool | None = None) -> go.F
     if resolve_show(show):
         fig.show()
     return fig
+
+
+# ---------------------------------------------------------------------------
+# Model-free analysis plots
+#
+# Duck-typed on the iquana.modelfree result objects, which import this module
+# lazily; nothing here imports iquana.modelfree.
+# ---------------------------------------------------------------------------
+
+MODELFREE_CONTEXT_FACTOR = 2.0  # dimmed context points from qmin/2 to 2·qmax
+MODELFREE_CURVE_POINTS = 200
+MODELFREE_WINDOW_FILL_COLOR = 'rgba(99, 110, 250, 0.08)'
+EXTRAPOLATION_FILL_COLOR = 'rgba(239, 85, 59, 0.25)'
+GUINIER_LAW_PEAK = (float(np.sqrt(3.0)), float(3.0 / np.e))
+
+
+def plot_modelfree_fit(data, result, show: bool | None = None) -> go.Figure:
+    """Plot a Guinier, power-law or Porod fit in its own coordinates, with residuals.
+
+    The points in the fit window are drawn with the fit; the dataset's other
+    points between qmin/2 and 2·qmax are drawn dimmed for context.
+
+    Args:
+        data: The dataset the analysis was run on.
+        result: A GuinierResult, PowerLawResult or PorodResult (duck-typed:
+            needs q, intensity, sigma, fit, accepted, qmin, qmax, parameters,
+            evaluate, _display, title, x_label, y_label, log_axes).
+        show: Same display convention as plot_results().
+    """
+    accepted = np.asarray(result.accepted, dtype=bool)
+    q_all = np.asarray(data.x, dtype=float)
+    if accepted.size != q_all.size:
+        raise ValueError(
+            f'Result accepted-mask length ({accepted.size}) does not match '
+            f'the data length ({q_all.size}).'
+        )
+    x, y, dy = result._display(result.q, result.intensity, result.sigma)
+    _, fit_y, _ = result._display(result.q, result.fit, result.sigma)
+
+    context = (
+        ~accepted
+        & (q_all >= result.qmin / MODELFREE_CONTEXT_FACTOR)
+        & (q_all <= result.qmax * MODELFREE_CONTEXT_FACTOR)
+    )
+    dy_all = np.asarray(data.dy, dtype=float) if has_real_data(getattr(data, 'dy', None)) else None
+    cx, cy, cdy = result._display(
+        q_all[context],
+        np.asarray(data.y, dtype=float)[context],
+        np.zeros(int(context.sum())) if dy_all is None else dy_all[context],
+    )
+
+    q_line = np.geomspace(result.qmin, result.qmax, MODELFREE_CURVE_POINTS)
+    line_x, line_y, _ = result._display(q_line, result.evaluate(q_line), np.zeros_like(q_line))
+
+    fig = make_subplots(
+        rows=2, cols=1, row_heights=[0.75, 0.25], shared_xaxes=True, vertical_spacing=0.05
+    )
+    if context.any():
+        fig.add_trace(
+            go.Scatter(
+                x=cx,
+                y=cy,
+                error_y=error_bars(cdy),
+                mode='markers',
+                name='Outside the window',
+                opacity=0.4,
+                marker={'size': 6, 'color': 'lightgray'},
+            ),
+            row=1,
+            col=1,
+        )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            error_y=error_bars(dy),
+            mode='markers',
+            name='Data in the window',
+            opacity=0.7,
+            marker={'size': 6},
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(x=line_x, y=line_y, mode='lines', name='Fit', line={'color': 'red', 'width': 2}),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=(y - fit_y) / dy,
+            mode='markers',
+            name='Residuals',
+            marker={'size': 6},
+            opacity=0.6,
+            showlegend=False,
+        ),
+        row=2,
+        col=1,
+    )
+    fig.add_hline(y=0, line_dash='dash', line_color='gray', row=2, col=1)
+    fig.add_vrect(
+        x0=float(np.min(x)),
+        x1=float(np.max(x)),
+        fillcolor=MODELFREE_WINDOW_FILL_COLOR,
+        line_width=0,
+        row=1,
+        col=1,
+    )
+    qr_limit = getattr(result, 'qr_limit', None)
+    if qr_limit is not None:
+        limit_q = np.array([qr_limit / result.radius])
+        limit_x, _, _ = result._display(limit_q, limit_q, limit_q)
+        fig.add_vline(
+            x=float(limit_x[0]),
+            line_dash='dot',
+            line_color='gray',
+            annotation_text=f'q·R = {qr_limit:g}',
+            row=1,
+            col=1,
+        )
+
+    axis_type = 'log' if result.log_axes else 'linear'
+    fig.update_yaxes(title_text=result.y_label, type=axis_type, row=1, col=1)
+    fig.update_yaxes(title_text='Residuals (σ)', row=2, col=1)
+    fig.update_xaxes(type=axis_type, row=1, col=1)
+    fig.update_xaxes(title_text=result.x_label, type=axis_type, row=2, col=1)
+    estimates = ', '.join(
+        f'{name} = {info["formatted"]}'
+        for name, info in result.parameters.items()
+        if not info['fixed']
+    )
+    fig.update_layout(
+        title=f'{result.title}: {estimates}', template='plotly_white', height=600, width=800
+    )
+    if resolve_show(show):
+        fig.show()
+    return fig
+
+
+def plot_kratky(curve, show: bool | None = None) -> go.Figure:
+    """Plot a Kratky curve; the dimensionless form carries the Guinier-law peak marks.
+
+    Args:
+        curve: A KratkyCurve (duck-typed: needs x, y, dy, dimensionless,
+            peak_position, peak_height).
+        show: Same display convention as plot_results().
+    """
+    fig = go.Figure(
+        go.Scatter(
+            x=curve.x,
+            y=curve.y,
+            error_y=error_bars(curve.dy),
+            mode='markers',
+            name='Data',
+            marker={'size': 6},
+            opacity=0.7,
+        )
+    )
+    if curve.dimensionless:
+        position, height = GUINIER_LAW_PEAK
+        fig.add_vline(x=position, line_dash='dot', line_color='gray')
+        fig.add_hline(
+            y=height,
+            line_dash='dot',
+            line_color='gray',
+            annotation_text='Guinier-law peak (√3, 3/e)',
+        )
+        x_title, y_title = 'Q·Rg', '(Q·Rg)²·I(Q)/I(0)'
+    else:
+        x_title, y_title = 'Q (Å⁻¹)', 'Q²·I(Q)'
+    if curve.peak_position is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=[curve.peak_position],
+                y=[curve.peak_height],
+                mode='markers',
+                name='Peak',
+                marker={'size': 12, 'symbol': 'x', 'color': 'red'},
+            )
+        )
+    fig.update_layout(
+        title='Kratky plot' + (' (dimensionless)' if curve.dimensionless else ''),
+        xaxis_title=x_title,
+        yaxis_title=y_title,
+        template='plotly_white',
+        height=500,
+        width=800,
+    )
+    if resolve_show(show):
+        fig.show()
+    return fig
+
+
+def plot_invariant(result, show: bool | None = None) -> go.Figure:
+    """Plot the invariant integrand q²·(I − B) with the extrapolated areas shaded.
+
+    Args:
+        result: An InvariantResult (duck-typed: needs q, intensity, sigma,
+            background, low_q_curve, high_q_curve, qstar, qstar_err).
+        show: Same display convention as plot_results().
+    """
+    q = np.asarray(result.q)
+    fig = go.Figure(
+        go.Scatter(
+            x=q,
+            y=q**2 * (np.asarray(result.intensity) - result.background),
+            error_y=error_bars(q**2 * np.asarray(result.sigma)),
+            mode='markers',
+            name='Measured',
+            marker={'size': 6},
+            opacity=0.7,
+        )
+    )
+    extrapolations = (
+        ('Low-Q extrapolation', result.low_q_curve),
+        ('High-Q extrapolation', result.high_q_curve),
+    )
+    for name, curve in extrapolations:
+        if curve is not None:
+            fig.add_trace(
+                go.Scatter(
+                    x=curve[0],
+                    y=curve[1],
+                    mode='lines',
+                    fill='tozeroy',
+                    name=name,
+                    fillcolor=EXTRAPOLATION_FILL_COLOR,
+                    line={'color': 'rgb(239, 85, 59)'},
+                )
+            )
+    fig.update_layout(
+        title=f'Invariant Q* = {result.qstar:.4g} ± {result.qstar_err:.2g}',
+        xaxis_title='Q (Å⁻¹)',
+        yaxis_title='Q²·(I(Q) − B)',
+        template='plotly_white',
+        height=500,
+        width=800,
+    )
+    if resolve_show(show):
+        fig.show()
+    return fig

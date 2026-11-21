@@ -5,11 +5,8 @@ from typing import Any
 
 import numpy as np
 
+from ..data.prepare import InsufficientDataError  # noqa: F401  (re-exported)
 from .basis import _ortho, _ortho_transformed, _pr_curve_and_band
-
-
-class InsufficientDataError(ValueError):
-    """The dataset does not carry enough usable points for the request."""
 
 
 class PrEstimationError(RuntimeError):
