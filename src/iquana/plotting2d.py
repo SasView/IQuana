@@ -213,3 +213,200 @@ def plot_fit_2d(
         **layout,
     )
     return fig
+
+
+# =============================================================================
+# 2D to 1D: the regions of the cuts, and the curves
+# =============================================================================
+
+
+def plot_cuts(
+    data: Any,
+    *cuts: Any,
+    excluded: np.ndarray,
+    log_scale: bool = True,
+    show: bool | None = None,
+) -> go.Figure:
+    """The image with each cut's region outlined, next to the cut curves.
+
+    Args:
+        data: The 2D dataset the cuts were made from.
+        cuts: Results of ``circular_average``, ``sector_average`` (any
+            ``Data1D``) and ``annular_average``.
+        excluded: Pixels drawn transparent (True = excluded).
+        log_scale: Log colour axis for the image, and log-log I(Q).
+    """
+    from plotly.colors import qualitative
+
+    from .data.averaging import AnnularAverage
+    from .data.selection import coordinate_digest
+    from .plotting import error_bars, resolve_show
+
+    if not cuts:
+        raise ValueError('Pass at least one cut to plot_cuts().')
+    rings = [cut for cut in cuts if isinstance(cut, AnnularAverage)]
+    curves = [cut for cut in cuts if not isinstance(cut, AnnularAverage)]
+    titles = ['Regions'] + (['I(Q)'] if curves else []) + (['I(φ)'] if rings else [])
+    fig = make_subplots(rows=1, cols=len(titles), subplot_titles=titles, horizontal_spacing=0.1)
+
+    grid = build_grid(data)
+    observed = np.where(excluded, np.nan, intensity(data))
+    sigma = uncertainty(data)
+    limits = _log_limits(observed, None if sigma is None else np.where(excluded, np.nan, sigma))
+    panel = _intensity_panel(grid.image(observed), log_scale, limits)
+    fig.add_trace(
+        go.Heatmap(
+            x=grid.qx,
+            y=grid.qy,
+            z=panel['z'],
+            customdata=panel['customdata'],
+            coloraxis='coloraxis',
+            hovertemplate='qx=%{x:.4g}<br>qy=%{y:.4g}<br>I=%{customdata:.4g}<extra></extra>',
+        ),
+        row=1,
+        col=1,
+    )
+
+    digest = coordinate_digest(data)
+    colours = qualitative.Plotly
+    curve_column = 2
+    ring_column = 2 + bool(curves)
+    for number, cut in enumerate(cuts):
+        colour = colours[number % len(colours)]
+        is_ring = isinstance(cut, AnnularAverage)
+        record = None if is_ring else getattr(cut, 'averaging', None)
+        name = cut.title if is_ring else str(getattr(cut, 'title', '') or f'cut {number + 1}')
+        group = {
+            'legendgroup': f'cut{number}',
+            'line': {'color': colour},
+            'marker': {'color': colour},
+        }
+        source = cut.image if is_ring else (record or {}).get('image')
+        if not is_ring and not isinstance(record, dict):
+            warnings.warn(
+                f"'{name}' has no averaging record (it was rebuilt, for example by "
+                'load_analysis() or arithmetic), so its region is not drawn.',
+                stacklevel=3,
+            )
+        elif source != digest:
+            warnings.warn(
+                f"'{name}' was not made from this image: its region is drawn on the wrong pixels.",
+                stacklevel=3,
+            )
+        for x, y in _outlines(cut, record):
+            fig.add_trace(
+                go.Scatter(x=x, y=y, mode='lines', showlegend=False, hoverinfo='skip', **group),
+                row=1,
+                col=1,
+            )
+        if is_ring:
+            fig.add_trace(
+                go.Scatter(
+                    x=cut.phi,
+                    y=cut.intensity,
+                    error_y=error_bars(cut.uncertainty),
+                    mode='markers+lines',
+                    name=name,
+                    **group,
+                ),
+                row=1,
+                col=ring_column,
+            )
+        else:
+            fig.add_trace(
+                go.Scatter(
+                    x=cut.x,
+                    y=cut.y,
+                    error_y=error_bars(cut.dy),
+                    mode='markers',
+                    name=name,
+                    **group,
+                ),
+                row=1,
+                col=curve_column,
+            )
+
+    fig.update_xaxes(title_text='Qx (Å⁻¹)', row=1, col=1)
+    fig.update_yaxes(title_text='Qy (Å⁻¹)', scaleanchor='x', scaleratio=1, row=1, col=1)
+    if curves:
+        axis_type = 'log' if log_scale else 'linear'
+        fig.update_xaxes(title_text='Q (Å⁻¹)', type=axis_type, row=1, col=curve_column)
+        fig.update_yaxes(title_text='I(Q)', type=axis_type, row=1, col=curve_column)
+    if rings:
+        fig.update_xaxes(title_text='φ (degrees)', dtick=90, row=1, col=ring_column)
+        fig.update_yaxes(title_text='I(φ)', row=1, col=ring_column)
+    fig.update_layout(
+        title=f'Cuts of {getattr(data, "filename", None) or "the image"}',
+        template='plotly_white',
+        height=450,
+        width=430 * len(titles) + 150,
+        coloraxis={
+            'colorscale': INTENSITY_COLORSCALE,
+            'cmin': limits[0] if log_scale else None,
+            'cmax': limits[1] if log_scale else None,
+            'colorbar': {'title': 'log₁₀ I' if log_scale else 'I', 'x': -0.12},
+        },
+    )
+    if resolve_show(show):
+        fig.show()
+    return fig
+
+
+def _outlines(cut: Any, record: dict | None) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Closed (qx, qy) paths around the region of *cut*, empty when unknown."""
+    if record is None and hasattr(cut, 'bin_width'):  # an annular average
+        return [_arc(radius, 0.0, 360.0) for radius in (cut.qmin, cut.qmax)]
+    if not isinstance(record, dict):
+        return []
+    inner, outer = record['qmin'], record['qmax']
+    if record['kind'] == 'circular':
+        return [_arc(radius, 0.0, 360.0) for radius in (inner, outer)]
+    centre, half_width = record['phi'], record['half_width']
+    centres = [centre, centre + 180.0] if record['mirror'] else [centre]
+    paths = []
+    for middle in centres:
+        start, stop = middle - half_width, middle + half_width
+        x_out, y_out = _arc(outer, start, stop)
+        x_in, y_in = _arc(inner, stop, start)
+        paths.append(
+            (np.concatenate([x_out, x_in, x_out[:1]]), np.concatenate([y_out, y_in, y_out[:1]]))
+        )
+    return paths
+
+
+def _arc(radius: float, start: float, stop: float) -> tuple[np.ndarray, np.ndarray]:
+    angles = np.radians(np.linspace(start, stop, 121))
+    return radius * np.cos(angles), radius * np.sin(angles)
+
+
+def plot_annular(ring: Any, fit: Any = None, show: bool | None = None) -> go.Figure:
+    """I(φ) of an annular average, with the ``fit_sin2`` curve when given."""
+    from .plotting import error_bars, resolve_show
+
+    fig = go.Figure(
+        go.Scatter(
+            x=ring.phi,
+            y=ring.intensity,
+            error_y=error_bars(ring.uncertainty),
+            mode='markers',
+            name='data',
+        )
+    )
+    title = ring.title
+    if fit is not None:
+        phi = np.linspace(0.0, 360.0, 361)
+        fig.add_trace(
+            go.Scatter(x=phi, y=fit.evaluate(phi), mode='lines', name='A + B sin²(φ − φ₀)')
+        )
+        title += f': φ₀ = {fit.phi0:.1f}°, B/A = {fit.ratio:.3g}'
+    fig.update_layout(
+        title=title,
+        template='plotly_white',
+        xaxis={'title': 'φ (degrees)', 'dtick': 45},
+        yaxis={'title': 'I(φ)'},
+        height=420,
+        width=700,
+    )
+    if resolve_show(show):
+        fig.show()
+    return fig

@@ -51,8 +51,21 @@ class TestPublicApi(unittest.TestCase):
             'InvariantResult',
             'KratkyCurve',
             'ModelFreeError',
+            'AnnularAverage',
+            'AnisotropyFit',
         }
         self.assertLessEqual(expected, set(iquana.__all__))
+
+    def test_data_ops_exposes_the_averages(self):
+        from iquana import data_ops
+
+        for name in ('circular_average', 'sector_average', 'annular_average', 'plot_cuts'):
+            self.assertIn(name, data_ops.__all__)
+            self.assertTrue(callable(getattr(data_ops, name)), name)
+
+    def test_fitter_exposes_the_averages(self):
+        for name in ('circular_average', 'sector_average', 'annular_average', 'plot_cuts'):
+            self.assertTrue(callable(getattr(iquana.IQuana, name)), name)
 
     def test_modelfree_api(self):
         from iquana import modelfree

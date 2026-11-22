@@ -26,6 +26,7 @@ A flexible, model-agnostic Python template for fitting Small-Angle Neutron Scatt
 - **Flexible Data Loading**: Reads CSV, XML, and HDF5 formats via sasdata, including files holding several datasets — pick one with `load_data(path, dataset=...)` by index or name
 - **Example Data Built In**: A curated set of ready-to-fit datasets plus a simulator that generates data  — `examples.load_fitter('silica_spheres')` or `examples.simulate('sphere', radius=50)`
 - **2D Data**: Fit detector images I(qx, qy) with the same workflow: beam-stop and validity masks (`mask_ring()`, `mask_invalid()`), 2D resolution, data/model/residual heatmaps, CSV export and saved analyses
+- **2D to 1D**: circular, sector and annular averages of a detector image (`circular_average()`, `sector_average('vertical')`, `annular_average(qmin, qmax)`), on one Q grid per image so cuts subtract directly; `plot_cuts()` shows the regions, `fit_sin2()` measures the anisotropy
 - **Magnetic (Polarised) SANS**: `enable_magnetism(beam='sanspol+')` exposes sasmodels' magnetisation and polarisation parameters for 2D data, with checks for setups sasmodels evaluates surprisingly
 - **Polydispersity and Custom Models**: Size distributions on any polydisperse parameter via `set_pd_param()`, and your own SasModels plugin models loaded by file path
 - **Resolution Control**: Choose how instrument smearing is applied — dQ from the data, none, custom pinhole (`dq_over_q`) or slit — with `set_resolution()`
@@ -42,7 +43,7 @@ A flexible, model-agnostic Python template for fitting Small-Angle Neutron Scatt
 - **P(r) Inversion**: Model-free pair distance distribution analysis (indirect Fourier transform) via `pr_inversion` — D_max exploration, automatic regularization/term selection, and Rg/I(0)/positivity diagnostics
 - **Fit-Quality Reporting**: Reduced χ² alongside raw χ², point and parameter counts, covariance/correlation matrices, a convergence verdict and a warning when a fitted parameter rests on a bound — all via `fitter.get_fit_report()`, which renders as a table in a notebook, as text, or as Markdown
 - **Result Export**: Save fitted parameters and curves to CSV files
-- **Scattering from a Structure**: Compute I(q) of atoms (PDB, GRO), pixels (SLD) or mesh cells (VTK) with the exact Debye formula, view the points in 3D, and hand the curve to a fit with `set_data(profile)` — `GenericScatteringCalculator`, from the [SincCity](https://easyscience.github.io/SincCity/) package
+- **Scattering from a Structure**: Compute I(q) of atoms (PDB, GRO), pixels (SLD) or mesh cells (VTK) with the exact Debye formula, view the points in 3D, and hand the curve to a fit with `set_data(profile)` — `GenericScatteringCalculator`, from the [SincCity](https://sasview.github.io/SincCity/) package
 - **Save, Reload and Share**: Store the whole analysis (data source, model, parameters, links, resolution, result) as JSON with `save_analysis()` / `IQuana.load_analysis()`, or write a single shareable HTML report with `report()`
 
 ## Installation
@@ -400,6 +401,7 @@ move (`min < max`); the fit names any that do not.
 - [notebooks/simultaneous_fitting.ipynb](notebooks/simultaneous_fitting.ipynb) — fitting several datasets together with `MultiFitter`: contrast variation, shared parameters, constraints, and joint diagnostics.
 - [notebooks/series_fitting.ipynb](notebooks/series_fitting.ipynb) — a temperature scan fitted with `fit_series()`: the table, flags and trend plot, a chained run checked against independent fits, repairing a row, saving and reopening the series.
 - [notebooks/magnetic_2d_fitting.ipynb](notebooks/magnetic_2d_fitting.ipynb) — 2D detector images and polarised SANS: masks, heatmaps, beam presets, magnetic fits of simulated and measured SANSPOL data.
+- [notebooks/averaging_2d.ipynb](notebooks/averaging_2d.ipynb) — from a 2D image to 1D curves: a circular average checked against the facility's 1D reduction, sectors along and across a field, `plot_cuts()`, I(φ) and its sin² fit in three spin channels, and fitting the cuts.
 - [notebooks/four_form_factors.ipynb](notebooks/four_form_factors.ipynb) — fitting a sum of four form factors against one dataset: what to fix, why a global optimizer is needed, and how to read the parameter correlations that remain.
 - [notebooks/structure_calculator.ipynb](notebooks/structure_calculator.ipynb) — the Generic Scattering Calculator: I(q) from SLD, PDB and VTK structures, the 3D point view, a check against the analytic sphere, fitting the computed curve, and a contrast series fitted with `MultiFitter`.
 

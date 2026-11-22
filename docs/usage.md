@@ -955,7 +955,7 @@ See `examples/pr_inversion_example.py` and
 
 `GenericScatteringCalculator` computes the orientationally averaged I(q) of a
 real-space structure: atoms from a PDB or GRO file, pixels from an SLD file, or
-the cells of a VTK mesh. It is the [SincCity](https://easyscience.github.io/SincCity/)
+the cells of a VTK mesh. It is the [SincCity](https://sasview.github.io/SincCity/)
 package, the nuclear, 1D part of SasView's *Generic Scattering Calculator*,
 which IQuana installs and re-exports; `iquana.structure` holds the rest of its
 API (`ScatteringProfile`, `Structure`, `load`, the readers and the errors).
@@ -997,7 +997,7 @@ explicitly (`normalisation_volume='auto'` restores the default).
 
 File formats, the four kernels, deuteration, size polydispersity, speed, and
 what to know about PDB volumes in a solvent are covered in the
-[SincCity user guide](https://easyscience.github.io/SincCity/).
+[SincCity user guide](https://sasview.github.io/SincCity/).
 
 **The curve is theory.** It has no dI and no dQ. `set_data()` takes the profile
 directly (or `profile.to_data1d()`), and the data line it prints says what to
@@ -1294,10 +1294,201 @@ perpendicular to Q**, not along x and y. 2D smearing oversamples every pixel;
 12, 30, 60 or 200 evaluations per pixel (default `'low'`). The setting can be
 given at any time and has no effect on 1D data.
 
+### From 2D to 1D
+
+Three averages turn an image into 1D data. Each is a method of the fitter, which
+uses the fitter's pixel selection, Q range and resolution setting, and a
+function in `data_ops` for a bare dataset:
+
+| Call | Gives |
+|---|---|
+| `circular_average(bins=None, log=False)` | I(Q) over the whole detector, a `Data1D` |
+| `sector_average(phi, half_width=10, mirror=True, bins=None, log=False)` | I(Q) inside a sector, a `Data1D` |
+| `annular_average(qmin, qmax, bins=36)` | I(φ) inside a ring, an `AnnularAverage` |
+| `plot_cuts(*cuts)` | the regions outlined on the image, next to the curves |
+
+```python
+fitter = examples.load_fitter('sanspol_plus')     # beam stop masked
+
+iq     = fitter.circular_average()
+along  = fitter.sector_average('horizontal')      # 0° ± 10°, both sides of the beam
+across = fitter.sector_average('vertical')        # 90° ± 10°
+ring   = fitter.annular_average(0.02, 0.04)
+
+fitter.plot_cuts(along, across, ring)              # did I cut where I meant to?
+anisotropic = data_ops.subtract(across, along)     # same Q grid: no rebinning
+
+one_d = IQuana()
+one_d.set_data(across)                             # an ordinary 1D fit from here on
+
+aniso = ring.fit_sin2()                            # I = A + B·sin²(φ − φ₀)
+
+# Without a fitter:
+iq = data_ops.circular_average(examples.load('p123_2d'), qmin=0.006)
+```
+
+The I(Q) cuts are fit-ready `Data1D` objects: `set_data()`,
+`MultiFitter.add()`, `fit_series()`, `modelfree`, P(r) and
+`data_ops.subtract()` take them as they are, and a fit to a cut saves and
+reloads with its provenance.
+
+**Angles** are in degrees, anticlockwise from +Qx, as for the magnetic
+parameters. Any finite value is accepted (370 means 10); `'horizontal'` and
+`'vertical'` are 0 and 90. These are detector directions: which one is the
+field depends on the instrument. A sector holds the pixels with
+phi − half_width ≤ angle < phi + half_width; `mirror=True` adds the sector on
+the other side of the beam, pooled with it. No result has negative Q.
+
+**Pixels.** The fitter methods use exactly the pixels a 2D fit uses: the file
+mask, `mask_ring()` and the other masks, and the Q range of `set_q_range()`
+(the ring of `annular_average()` is given by its own `qmin` and `qmax`). For
+other limits on one cut, call the function:
+`data_ops.circular_average(fitter.data, qmin=..., mask=fitter.get_mask()['excluded'])`.
+The functions take `mask=` (a boolean array, True = excluded, or
+`f(qx, qy)`) and `mask_convention=` as `set_data()` does. A pixel belongs to
+the bin its centre falls in. Each bin holds the plain mean of its pixels,
+with σ = √(Σσᵢ²) / N.
+
+**One grid per image.** The bin edges depend on the image and on `bins` only,
+never on the sector, the mask or the Q range, so every cut of one image has the
+same Q values. The Q value of a bin is the mean |Q| of a fully covered ring
+between its edges, (2/3)(b³ − a³)/(b² − a²).
+
+| `bins` | Grid |
+|---|---|
+| `None` | from Q = 0 outward, each bin as wide as the local pixel pitch |
+| an integer | that many equal bins from the smallest \|Q\| to the largest; equal in log Q with `log=True` |
+| an array | the edges as given |
+| a cut | the grid of that cut: how a second file is put on the grid of the first |
+| any `Data1D` | edges halfway between its Q values, and its Q values as x: how a cut lands on the points of a reduced 1D file |
+
+The default follows the pixels: the merged two-distance S50 images get bins
+0.00104 Å⁻¹ wide at low Q and about 0.0039 above Q ≈ 0.1, and the log line
+says "2 pixel pitches". Two files from the same detector setting are not the
+same image (their coordinates differ by rounding, the beam centre moves), so
+put them on one grid before subtracting:
+
+```python
+minus = examples.load_fitter('sanspol_minus')
+cross_term = data_ops.subtract(minus.sector_average('vertical', bins=across), across)
+```
+
+**Empty and edge bins.** A bin without pixels stays in the curve as NaN, which
+IQuana masks everywhere: it is neither fitted nor plotted, and the data summary
+says "151 (104 with data)". A bin that the beam stop, a mask or the detector
+edge cuts through is dropped as well (NaN, counted as an *edge bin*) when the
+mean |Q| of its pixels is more than 2 % from the bin's Q value, because that Q
+value no longer describes its pixels. The same test drops the odd fully covered
+bin close to the beam, where a ring holds only a few pixels. A Q limit never
+leaves a half-filled bin: a bin that `qmin` or `qmax` cuts through is left out
+whole.
+
+**Uncertainties.** Whether the image has dI is decided as everywhere in IQuana:
+an all-zero column, which is how sasdata stores a missing one, counts as none.
+
+- *Without dI*, a bin's uncertainty is the standard error of the mean of its
+  pixels (warning `uncertainties_from_scatter`). The scatter also holds the
+  slope of I(Q) across the bin and any variation with angle, so it
+  overestimates the error, most of all for an annulus. Bins with fewer than 5
+  pixels are left out.
+- *Pixels with dI = 0* are kept, as the fitter keeps them, and counted
+  (warning `zero_uncertainty_pixels`). They add nothing to Σσ², so the dI of a
+  bin holding them is too small. If they are dead pixels, call
+  `mask_invalid()` first.
+- The formula takes pixels as independent. An image that was regridded during
+  reduction has correlated neighbours, and its dI comes out too small.
+
+**Resolution.** The fitter methods follow `set_resolution()`: with `'data'`
+the file's radial width `dqx_data`, with `'pinhole'` a width
+`dq_over_q·|Q|` per pixel, with `'none'` no dQ. The cut's dQ is then
+√(mean(σ∥²) + mean((|Q| − Q_bin)²)): the pixel width plus the spread of |Q|
+inside the bin. None of the bundled 2D files has dQ, so
+`set_resolution('pinhole', dq_over_q=...)` on the 2D fitter is the usual
+route. The `data_ops` functions know only the file column. Without a width the
+cut has no dQ, and the log line says so.
+
+**What a sector measures on anisotropic data.** A sector returns the mean over
+its opening. On I = A + B·sin²θ (θ from the field) a sector across the field
+gives A + B·½(1 + sin 2w / 2w) and one along it A + B·½(1 − sin 2w / 2w), for
+half-width w:
+
+| `half_width` | across: A + B × | along: A + B × |
+|---|---|---|
+| 5° | 0.997 | 0.003 |
+| 10° | 0.990 | 0.010 |
+| 20° | 0.960 | 0.040 |
+| 30° | 0.914 | 0.086 |
+| 45° | 0.818 | 0.182 |
+
+At low Q a narrow sector holds few pixels (4 per bin in the first bins of a
+±10° sector of `p123_2d`), so the opening actually sampled there is only
+approximately the one asked for. Use coarser `bins` or a wider sector when the
+low-Q points matter.
+
+**The annular average** is I(φ): bin centres in degrees, a bin centred on 0°.
+It is not a `Data1D`, since the angles are not Q values, so `set_data()`,
+`modelfree` and P(r) refuse it. It has `format_summary()`, `plot()`,
+`save_csv()` and `fit_sin2()`. Every angular bin averages the whole ring, so
+if the bins hold different radii (the ring passes the detector edge, or is
+narrow compared with the pixels) a slope of I(Q) shows as variation with
+angle; warning `uneven_ring` says so when the mean |Q| varies by more than 5 %
+between angular bins.
+
+**`fit_sin2()`** fits I(φ) = A + B·sin²(φ − φ₀) by weighted linear least
+squares, corrected for the width of the angular bins. With φ₀ free, B is
+positive and φ₀ is **the direction of least intensity**, which is the field
+only where the physics makes B positive. On the S50 ring 0.02 to 0.04 Å⁻¹ the
+free fit gives φ₀ ≈ 0° for I⁺ and the unpolarised beam but 90° for I⁻, for one
+and the same field. Fit φ₀ on the unpolarised or I⁺ ring, then pass it on:
+
+```python
+direction = plus.annular_average(0.02, 0.04).fit_sin2().phi0
+minus.annular_average(0.02, 0.04).fit_sin2(phi0=direction)   # B < 0
+```
+
+When B is below 3 σ the direction is not determined: warning
+`weak_anisotropy`, and φ₀ gets no error bar. The result has `a`, `b`, `phi0`
+and their errors, `ratio` = B / A, `format_summary()`, `report()` and
+`plot()`.
+
+**Arithmetic on cuts.** Cuts of one image subtract at once. sasdata propagates
+the uncertainty as for independent datasets, which is wrong when the two cuts
+share pixels (a circular average minus a sector, two overlapping sectors):
+warning `shared_pixels`. The along and across sectors of the example share
+none. Within one spin channel, `subtract(across, along)` is the anisotropic
+part of that channel, |M|² ∓ 2·Re(N M*) for a saturated sample, not the
+magnetic scattering alone; see "Magnetic (Polarised) SANS".
+
+**Isotropy.** P(r), the invariant and Porod assume isotropic scattering. On a
+sector of anisotropic data they run, but the numbers are not the quantities
+their names promise. Use a circular average of an isotropic sample for them.
+
+**Other warnings.** `one_sided`: `mirror=True` but one of the two sectors has
+no usable pixel. `sides_differ`: the two sides of a mirrored sector differ
+significantly *and* by more than 2 % (median); the message lists the possible
+causes (beam centre, gravity, detector efficiency, scattering that is not
+centrosymmetric) and suggests comparing `mirror=False` at φ and φ + 180.
+`partial_ring`: less than half of a ring has pixels.
+
+#### Differences from SasView
+
+SasView's slicers use sasdata's averagers, which give different numbers in
+some cases. A mismatch there is not an IQuana bug:
+
+- SasView's circular average uses only the pixels with qy ≥ 0, and ignores the
+  mask unless asked.
+- Its annular (Ring) average reports angles shifted by 180°.
+- Its folded sector weights the two sides equally whatever their pixel counts,
+  and fails when one side is empty; IQuana pools the pixels of both sides.
+- A pixel with dI = 0 gets dI = √|I| there; IQuana keeps the zero and says so.
+- SasView's unfolded sector plots the second side at negative Q; IQuana never
+  returns negative Q.
+
 ### What stays 1D
 
-`compare()`, `plot_posterior_predictive()`, `MultiFitter`, `data_ops` and
-P(r) inversion accept 1D data only and say so. Composite models
+`compare()`, `plot_posterior_predictive()`, `MultiFitter`, `fit_series()`, the
+`data_ops` arithmetic, `modelfree` and P(r) inversion accept 1D data only and
+say so; a circular or sector average of the image is the way in. Composite models
 (`set_models()`) still need the bumps engine. Component maps
 (`show_components=True`) are not drawn for 2D data.
 
@@ -1381,12 +1572,31 @@ component prefixes (`small_sld_M0`); `shared=` may name them
 (`shared=['sld_solvent', 'sld_solvent_M0']`), and sharing a nuclear SLD does
 not share its magnetisation.
 
+**Sectors and rings.** Cuts along and across the field are often the first
+look at a magnetic image. For a saturated sample with the field in the detector
+plane, the unpolarised `across − along` is the magnetic term, and I⁻ − I⁺
+across the field the nuclear-magnetic cross term. A cut of a second file goes
+on the grid of the first with `bins=`:
+
+```python
+plus, unpol, minus = (examples.load_fitter(f'sanspol_{c}') for c in ('plus', 'unpol', 'minus'))
+across = plus.sector_average('vertical')
+magnetic = data_ops.subtract(unpol.sector_average('vertical', bins=across),
+                             unpol.sector_average('horizontal', bins=across))
+cross_term = data_ops.subtract(minus.sector_average('vertical', bins=across), across)
+```
+
+`annular_average(...).fit_sin2()` measures the sin² anisotropy; see "From 2D
+to 1D" for what its φ₀ means in each channel.
+
 **Not yet.** Simultaneous fits of several spin channels (`MultiFitter`),
 models with vector SLDs (`core_multi_shell`, `onion`), and the beta
 approximation of structure factors in 2D.
 
 See `notebooks/magnetic_2d_fitting.ipynb` and
-`examples/magnetic_2d_example.py` for a complete walk-through.
+`examples/magnetic_2d_example.py` for a complete walk-through, and
+`notebooks/averaging_2d.ipynb` and `examples/averaging_example.py` for the
+averages.
 
 ## Polydispersity
 

@@ -1,5 +1,5 @@
 """
-Dataset arithmetic for SANS data (issue #45).
+Dataset arithmetic and 2D-to-1D averages for SANS data.
 
 Notebook-friendly functions to add, subtract, multiply and divide datasets —
 similar to SasView's *Data Operation* utility. Typical uses:
@@ -25,6 +25,16 @@ Example:
     >>> fitter.set_model('sphere')
     >>> fitter.fit()
 
+A 2D image becomes 1D data here as well (see :mod:`iquana.data.averaging`):
+
+- ``circular_average(image)`` — I(Q) over the whole detector
+- ``sector_average(image, phi)`` — I(Q) along one direction
+- ``annular_average(image, qmin, qmax)`` — I(φ) inside a ring
+- ``plot_cuts(image, *cuts)`` — the regions on the image, with the curves
+
+All cuts of one image share one Q grid, so ``subtract(across, along)`` works
+at once.
+
 Limitations:
     - Both datasets must share the same Q grid (sasdata requires x-values to
       match within 1% relative tolerance). Interpolation onto a common grid is
@@ -42,11 +52,30 @@ import warnings
 from typing import Any
 
 import numpy as np
-from sasdata.dataloader.data_info import Data1D, Data2D, Process
+from sasdata.dataloader.data_info import Data1D, Data2D
 
+from .averaging import (
+    AnnularAverage,
+    annular_average,
+    circular_average,
+    excluded_pixels,
+    sector_average,
+    shared_pixels,
+)
 from .loader import has_real_data, load_sans_data, normalize_sans_data
+from .provenance import add_process
 
-__all__ = ['load', 'add', 'subtract', 'multiply', 'divide']
+__all__ = [
+    'load',
+    'add',
+    'subtract',
+    'multiply',
+    'divide',
+    'circular_average',
+    'sector_average',
+    'annular_average',
+    'plot_cuts',
+]
 
 Operand = Data1D | numbers.Number
 
@@ -150,7 +179,13 @@ def _validate_operand(obj: Any, position: str, allow_scalar: bool) -> None:
         raise TypeError(f'The {position} operand must be a Data1D dataset, got a scalar.')
     if isinstance(obj, Data2D) or getattr(obj, 'qx_data', None) is not None:
         raise TypeError(
-            f'The {position} operand is 2D data; dataset arithmetic supports 1D data only.'
+            f'The {position} operand is 2D data; dataset arithmetic supports 1D data only. '
+            'Make a 1D curve first with circular_average() or sector_average().'
+        )
+    if isinstance(obj, AnnularAverage):
+        raise TypeError(
+            f'The {position} operand is an annular average, I(phi); arithmetic on annular '
+            'averages is not supported yet.'
         )
     if not isinstance(obj, Data1D):
         raise TypeError(
@@ -190,6 +225,8 @@ def _operation(op_symbol: str, a: Data1D, b: Operand) -> Data1D:
     """Validate operands, run the sasdata operator and finalize the result."""
     _validate_operand(a, 'first', allow_scalar=False)
     _validate_operand(b, 'second', allow_scalar=True)
+    if isinstance(b, Data1D):
+        _check_pair(op_symbol, a, b)
 
     try:
         result = _OPERATORS[op_symbol](a, b)
@@ -212,6 +249,50 @@ def _operation(op_symbol: str, a: Data1D, b: Operand) -> Data1D:
     return _finalize(result, operation, a, b)
 
 
+def _check_pair(op_symbol: str, a: Data1D, b: Data1D) -> None:
+    """Refuse dQ on the second operand only; warn about cuts sharing pixels."""
+    # sasdata multiplies into result.dx, a clone of the first operand's None.
+    if getattr(a, 'dx', None) is None and getattr(b, 'dx', None) is not None:
+        raise ValueError(
+            f'Cannot compute {_dataset_label(a)} {op_symbol} {_dataset_label(b)}: the second '
+            'operand has dQ and the first has none, which sasdata cannot combine. Give both '
+            'a dQ (for cuts: the same set_resolution() on both fitters) or neither.'
+        )
+    if shared_pixels(a, b):
+        warnings.warn(
+            f'{_dataset_label(a)} and {_dataset_label(b)} are cuts of one image that use '
+            'some of the same pixels. The uncertainty is propagated as for independent '
+            'datasets, so the dI of the result is wrong; only cuts without common pixels '
+            'combine correctly. [shared_pixels]',
+            stacklevel=4,
+        )
+
+
+def plot_cuts(
+    data: Any,
+    *cuts: Any,
+    mask: Any = None,
+    mask_convention: str | None = None,
+    log_scale: bool = True,
+    show: bool | None = None,
+):
+    """Draw the regions of *cuts* on the 2D image *data*, next to their curves.
+
+    One figure: the image with each region outlined in the colour of its
+    curve, the I(Q) cuts (log-log with *log_scale*) and, when any were passed,
+    the annular averages I(φ). A cut made from another image, or one without
+    its ``averaging`` record, is drawn with a warning. *mask* and
+    *mask_convention* choose the pixels drawn, as for the averages.
+
+    Returns:
+        A plotly ``Figure``.
+    """
+    from ..plotting2d import plot_cuts as draw
+
+    excluded = excluded_pixels(data, mask, mask_convention, 'plot_cuts')
+    return draw(data, *cuts, excluded=excluded, log_scale=log_scale, show=show)
+
+
 def _finalize(result: Data1D, operation: str, a: Data1D, b: Operand) -> Data1D:
     """Make an arithmetic result fit-ready and record provenance."""
     # The upstream operators clone metadata from the left operand only and do
@@ -223,15 +304,7 @@ def _finalize(result: Data1D, operation: str, a: Data1D, b: Operand) -> Data1D:
 
     result.title = operation
     result.filename = operation
-    process = Process()
-    # Frozen provenance label: files saved before the 0.3 restructuring carry
-    # this name, so it stays 'iquana.data_ops' even though the module is
-    # now iquana.data.ops.
-    process.name = 'iquana.data_ops'
-    process.description = f'Dataset arithmetic: {operation}'
-    if getattr(result, 'process', None) is None:
-        result.process = []
-    result.process.append(process)
+    add_process(result, f'Dataset arithmetic: {operation}')
 
     if not has_real_data(getattr(result, 'dy', None)):
         warnings.warn(
