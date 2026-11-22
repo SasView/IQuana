@@ -61,6 +61,9 @@ __all__ = [
 #: is an edge bin and is dropped. 1 % would also drop fully covered bins of a
 #: regular detector (1.1 % from the pixel lattice alone).
 EDGE_BIN_TOLERANCE = 0.02
+#: Default grid: a nearest-neighbour distance below this fraction of the mean
+#: pixel spacing of the image is two coinciding pixels, not a pixel pitch.
+PITCH_FLOOR = 0.1
 #: Without dI, a bin needs this many pixels for its scatter to be an error bar.
 MIN_SCATTER_PIXELS = 5
 #: ``uneven_ring``: largest spread of the per-angle mean |Q|, peak to peak.
@@ -282,9 +285,20 @@ def _pitch_edges(qx: np.ndarray, qy: np.ndarray) -> np.ndarray:
     q = np.hypot(qx, qy)
     order = np.argsort(q)
     q, pitch = q[order], pitch[order]
-    pitch[pitch <= 0] = np.nan  # duplicated coordinates
     # The width of a regular image, for an image with no usable pitch at all.
-    fallback = math.sqrt(np.ptp(qx) * np.ptp(qy) / q.size) or q[-1] or 1.0
+    regular = math.sqrt(np.ptp(qx) * np.ptp(qy) / q.size)
+    fallback = regular or q[-1] or 1.0
+    # Duplicated coordinates, and pixels that nearly coincide (overlapping
+    # panels): their neighbour distance is the offset between the panels, not
+    # a pixel size, and would make the bins arbitrarily narrow.
+    coincident = pitch <= PITCH_FLOOR * regular
+    pitch[coincident] = np.nan
+    if 2 * np.count_nonzero(coincident) > q.size:
+        logger.info(
+            f'  {np.count_nonzero(coincident)} of {q.size} pixels nearly coincide with a '
+            'neighbour (overlapping panels?): the default bins are as wide as the mean '
+            'pixel spacing there. Give bins= to choose the width.'
+        )
 
     edges = [0.0]
     while edges[-1] <= q[-1]:
@@ -507,8 +521,11 @@ def radial_average(
         keep &= grid.edges[:-1] >= qmin
     if qmax is not None:
         keep &= grid.edges[1:] <= qmax
+    # Coverage is judged against the ring between the edges, not against
+    # grid.q: with bins=<a curve> those are the curve's own Q values, which a
+    # fully covered bin of a coarse grid need not match.
     with np.errstate(invalid='ignore', divide='ignore'):
-        edge = keep & (np.abs(binned.q_mean / grid.q - 1) > EDGE_BIN_TOLERANCE)
+        edge = keep & (np.abs(binned.q_mean / ring_q(grid.edges) - 1) > EDGE_BIN_TOLERANCE)
     keep &= ~edge
     with_data = keep & np.isfinite(binned.intensity)
     if not with_data.any():
@@ -849,6 +866,12 @@ def angular_average(image: Image, qmin: float, qmax: float, bins: int = 36) -> '
         raise ValueError(_no_pixels_message(image, stages, sector=False))
     index = (np.floor((image.phi + width / 2) / width).astype(int)) % bins
     binned = _bin(image, picked, index, bins)
+    if not np.isfinite(binned.intensity).any():  # only possible without dI
+        raise ValueError(
+            f'The image has no dI, and no angular bin holds the {MIN_SCATTER_PIXELS} pixels '
+            'needed to estimate an uncertainty from their scatter. Use fewer angular bins '
+            'or a wider ring.'
+        )
 
     found: list[tuple[str, str]] = []
     _check_pixels(image, picked, found)

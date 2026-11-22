@@ -299,6 +299,33 @@ class TestGrid:
         cut = data_ops.circular_average(data, bins=target)
         np.testing.assert_array_equal(cut.x, q)
 
+    def test_a_coarse_curve_as_bins_keeps_its_fully_covered_bins(self):
+        # Halfway edges around log-spaced Q values put the ring mean several
+        # per cent from those values; that is not a bin the mask cut through.
+        data = image(porod, n=128)
+        q = 0.005 * 1.5 ** np.arange(7)
+        cut = data_ops.circular_average(data, bins=Data1D(x=q, y=np.ones_like(q)))
+        np.testing.assert_array_equal(cut.x, q)
+        assert cut.averaging['edge_bins'].size == 0
+        assert finite(cut).all()
+
+    def test_default_grid_ignores_nearly_coincident_pixels(self):
+        # Two overlapping panels: the neighbour distance is their offset.
+        single = image(porod)
+        qx = np.concatenate([single.qx_data, single.qx_data + 1e-6])
+        qy = np.concatenate([single.qy_data, single.qy_data + 3e-7])
+        double = Data2D(
+            data=porod(qx, qy),
+            err_data=np.full(qx.size, 0.01),
+            qx_data=qx,
+            qy_data=qy,
+            q_data=np.hypot(qx, qy),
+            mask=np.ones(qx.size, dtype=bool),
+        )
+        n_single = data_ops.circular_average(single).x.size
+        n_double = data_ops.circular_average(double).x.size
+        assert n_single <= n_double <= 2 * n_single
+
 
 # =============================================================================
 # Resolution
@@ -543,6 +570,11 @@ class TestPixels:
         data = image(err=None, n=8)
         with pytest.raises(ValueError, match='coarser bins'):
             quietly(data_ops.sector_average, data, 45, half_width=1, bins=np.linspace(0, 0.2, 200))
+
+    def test_a_ring_without_di_and_no_bin_of_five_pixels_raises(self):
+        data = image(porod, err=None, n=16)
+        with pytest.raises(ValueError, match='fewer angular bins'):
+            quietly(data_ops.annular_average, data, 0.03, 0.05, bins=72)
 
     def test_the_input_is_never_modified(self):
         data = image(porod, dq=0.05)
