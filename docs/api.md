@@ -23,6 +23,10 @@ The main class for SANS data fitting.
         - set_mask
         - reset_mask
         - get_mask
+        - circular_average
+        - sector_average
+        - annular_average
+        - plot_cuts
         - set_q_range
         - reset_q_range
         - get_q_range
@@ -328,7 +332,8 @@ while displays that need the samples themselves raise instead of inventing them.
 
 Dataset arithmetic: add, subtract, multiply and divide datasets (or a dataset
 and a scalar) with propagated uncertainties, returning fit-ready `Data1D`
-objects.
+objects. And the 2D-to-1D averages: circular and sector averages, which return
+fit-ready `Data1D` objects, and the annular average I(φ).
 
 ::: iquana.data.ops
     options:
@@ -340,6 +345,23 @@ objects.
         - subtract
         - multiply
         - divide
+        - circular_average
+        - sector_average
+        - annular_average
+        - plot_cuts
+
+## AnnularAverage and AnisotropyFit
+
+I(φ) inside a ring, from `annular_average()`, and its fit to
+I = A + B·sin²(φ − φ₀). Both are exported from the package root.
+
+::: iquana.data.averaging
+    options:
+      show_root_heading: true
+      show_source: true
+      members:
+        - AnnularAverage
+        - AnisotropyFit
 
 
 ## pr_inversion
@@ -398,8 +420,8 @@ from the package root.
 
 The orientationally averaged I(q) of a real-space structure (PDB, GRO, SLD or
 VTK file) by the exact Debye formula. `iquana.GenericScatteringCalculator` and
-the names in `iquana.structure` are the [SincCity](https://easyscience.github.io/SincCity/)
-package's own objects; its [API reference](https://easyscience.github.io/SincCity/)
+the names in `iquana.structure` are the [SincCity](https://sasview.github.io/SincCity/)
+package's own objects; its [API reference](https://sasview.github.io/SincCity/)
 documents them. See [Scattering from a Structure](usage.md#scattering-from-a-structure-generic-scattering-calculator)
 for how a computed curve reaches a fit.
 

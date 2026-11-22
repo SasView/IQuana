@@ -169,3 +169,7 @@ SIGMA = _glyph('σ', 'sigma')
 MIDDLE_DOT = _glyph('·', '-')
 #: Square root, used for the sqrt(|I|) data weighting.
 SQRT = _glyph('√', 'sqrt')
+#: Azimuthal angle on the detector.
+PHI = _glyph('φ', 'phi')
+#: Unit of an angle.
+DEGREE = _glyph('°', ' deg')

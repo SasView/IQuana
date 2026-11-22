@@ -2287,7 +2287,8 @@ def _reject_2d(name: str, fitter: IQuana) -> None:
     if fitter.is_2d:
         raise TypeError(
             f"Cannot add '{name}': MultiFitter supports 1D data only. Fit 2D datasets "
-            'one at a time with IQuana.'
+            'one at a time with IQuana, or fit 1D cuts of them together '
+            '(fitter.circular_average(), fitter.sector_average()).'
         )
 
 

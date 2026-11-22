@@ -76,6 +76,24 @@ def fingerprint_arrays(data: Any) -> str:
     return digest.hexdigest()
 
 
+#: Name of the Process record IQuana adds to a dataset it computes. Frozen:
+#: files saved before the 0.3 restructuring carry it, so it stays
+#: 'iquana.data_ops' even though the module is now iquana.data.ops.
+PROCESS_NAME = 'iquana.data_ops'
+
+
+def add_process(data: Any, description: str) -> None:
+    """Append a Process record saying how IQuana computed *data*."""
+    from sasdata.dataloader.data_info import Process
+
+    process = Process()
+    process.name = PROCESS_NAME
+    process.description = description
+    if getattr(data, 'process', None) is None:
+        data.process = []
+    data.process.append(process)
+
+
 def describe_processes(data: Any) -> list[str]:
     """Human-readable provenance lines from a dataset's sasdata Process records."""
     lines: list[str] = []

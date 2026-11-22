@@ -373,7 +373,10 @@ def fit_series(
     if template.kernel is None:
         raise ValueError('No model set. Use set_model() on the template first.')
     if template.is_2d:
-        raise ValueError('fit_series() fits 1D data in this version; the template holds 2D data.')
+        raise ValueError(
+            'fit_series() fits 1D data in this version; the template holds 2D data. '
+            'A series of 1D cuts works: fitter.circular_average() or sector_average().'
+        )
     if start not in _STARTS:
         raise ValueError(f"Unknown start {start!r}. Use 'previous' or 'template'.")
     template._check_fit_setup(engine, method)

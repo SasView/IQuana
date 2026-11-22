@@ -13,7 +13,7 @@ from typing import Any, ClassVar, NamedTuple
 import numpy as np
 
 from ..data.prepare import FABRICATED_SIGMA_FORMULA
-from ..report import FitReport, json_safe
+from ..report import FitReport, json_safe, parameter_block
 
 
 class ModelFreeError(ValueError):
@@ -196,23 +196,7 @@ class ModelFreeFit(ModelFreeResult):
     @property
     def parameters(self) -> dict[str, dict[str, Any]]:
         """Parameters in the fit engines' shape, as :class:`FitReport` reads them."""
-        from ..fitting.bumps_engine import format_uncertainty
-
-        block = {}
-        for name, value, err, fitted in self._param_entries():
-            stderr = float(err) if fitted and err is not None else 0.0
-            block[name] = {
-                'value': float(value),
-                'stderr': stderr,
-                'formatted': (
-                    format_uncertainty(float(value), stderr)
-                    if fitted and math.isfinite(stderr) and stderr > 0
-                    else f'{float(value):.6g}' + ('' if fitted else ' (fixed)')
-                ),
-                'fixed': not fitted,
-                'linked_to': None,
-            }
-        return block
+        return parameter_block(self._param_entries())
 
     @property
     def theta(self) -> np.ndarray:

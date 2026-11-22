@@ -2,6 +2,49 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased] - 0.7
+
+### Added
+
+- **2D to 1D: circular, sector and annular averages** (roadmap item 3.3):
+  - `IQuana.circular_average()`, `sector_average(phi, half_width=10,
+    mirror=True)` and `annular_average(qmin, qmax, bins=36)`, using the
+    fitter's pixel selection, Q range and resolution setting; the same three
+    as functions in `data_ops`, with `mask=` and `mask_convention=`, for a bare
+    dataset.
+  - The I(Q) cuts are fit-ready `Data1D` objects: they go into `set_data()`,
+    `MultiFitter.add()`, `fit_series()`, `modelfree`, P(r) and
+    `data_ops.subtract()` as they are, and carry the image's metadata and a
+    provenance record.
+  - One Q grid per image, from the local pixel pitch by default (merged
+    multi-distance images get one width per pitch), so every cut of one image
+    has the same Q values. `bins=` takes a number (with `log=True`), edges, an
+    earlier cut (to put a second file on the first one's grid) or any `Data1D`
+    (to land on the points of a reduced 1D file). Empty bins, and bins a mask
+    or a Q limit cuts through, are NaN and masked.
+  - dQ from the file's radial width or the fitter's pinhole setting, plus the
+    spread of |Q| inside each bin.
+  - `AnnularAverage` (I(φ)) with `fit_sin2()`, which returns an
+    `AnisotropyFit`: A, B and φ₀ of I = A + B·sin²(φ − φ₀), with errors, a
+    summary, a `FitReport` and a plot. Both exported from the package root.
+  - `plot_cuts()` (fitter method and `data_ops` function): the regions
+    outlined on the image next to the curves.
+  - Named warnings: `uncertainties_from_scatter`, `zero_uncertainty_pixels`,
+    `one_sided`, `sides_differ`, `partial_ring`, `uneven_ring`,
+    `weak_anisotropy`, and `shared_pixels` from arithmetic on cuts of one
+    image that share pixels.
+  - `notebooks/averaging_2d.ipynb` and `examples/averaging_example.py`; a
+    "From 2D to 1D" section, with "Differences from SasView", in the user
+    guide.
+
+### Changed
+
+- `data_ops` arithmetic refuses a first operand without dQ when the second has
+  it, with a message, instead of failing inside sasdata with a `TypeError`.
+- The 1D data summary says "151 (104 with data)" for a curve with NaN rows.
+- The "1D only" messages of `MultiFitter`, `fit_series()`, `data_ops`,
+  `modelfree` and P(r) point at the averages.
+
 ## [0.6.0] - 2026-11-20
 
 ### Added

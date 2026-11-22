@@ -8,6 +8,7 @@ from . import examples, modelfree, structure
 from . import inversion as pr_inversion
 from .console import adopt_logger, set_verbosity
 from .data import ops as data_ops
+from .data.averaging import AnisotropyFit, AnnularAverage
 from .fitter import IQuana, get_all_models, get_structure_factors
 from .inversion import InsufficientDataError, PrEstimationError, PrResult
 from .modelfree import (
@@ -66,4 +67,6 @@ __all__ = [
     'ModelFreeError',
     'GenericScatteringCalculator',
     'structure',
+    'AnnularAverage',
+    'AnisotropyFit',
 ]

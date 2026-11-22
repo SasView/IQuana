@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+from .averaging import ANNULAR_NOT_A_CURVE, AnnularAverage
 from .loader import has_real_data
 
 FABRICATED_SIGMA_RELATIVE = 0.05
@@ -65,7 +66,12 @@ def prepare_1d(
             caller.
     """
     if getattr(data, 'qx_data', None) is not None:
-        raise TypeError(f'{purpose} supports 1D data only, got 2D data.')
+        raise TypeError(
+            f'{purpose} supports 1D data only, got 2D data. Make a 1D curve first with '
+            'data_ops.circular_average() or sector_average().'
+        )
+    if isinstance(data, AnnularAverage):
+        raise TypeError(ANNULAR_NOT_A_CURVE)
     if getattr(data, 'isSesans', False):
         raise TypeError(f'{purpose} does not support SESANS data.')
 

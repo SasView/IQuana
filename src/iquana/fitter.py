@@ -25,6 +25,7 @@ from sasmodels.direct_model import DirectModel
 
 from . import plotting
 from .console import ARROW, CHI_SQUARED, INVERSE_ANGSTROM, OK, SIGMA, logger
+from .data import averaging
 from .data.loader import (
     get_fit_index,
     has_real_data,
@@ -169,6 +170,15 @@ BOUND_WARNING = 'Fitted parameter(s) at a bound:'
 CONVERGENCE_WARNING = 'The optimizer did not report convergence:'
 
 
+def _count_points(y: Any) -> str:
+    """'91' or, for a curve with NaN rows (a cut's empty bins), '91 (61 with data)'."""
+    values = np.asarray(y, dtype=float)
+    with_data = int(np.isfinite(values).sum())
+    return (
+        str(values.size) if with_data == values.size else f'{values.size} ({with_data} with data)'
+    )
+
+
 class IQuana:
     """
     A flexible SANS model fitter that works with any SasModels model.
@@ -308,6 +318,8 @@ class IQuana:
                 contain non-positive Q values (1D) or non-finite coordinates
                 (2D), or every 2D pixel is excluded.
         """
+        if isinstance(data, averaging.AnnularAverage):
+            raise TypeError(averaging.ANNULAR_NOT_A_CURVE)
         if hasattr(data, 'to_data1d') and not hasattr(data, 'x'):
             data = data.to_data1d()
         if is_2d(data):
@@ -406,7 +418,7 @@ class IQuana:
         if self._selection is None:
             lines += [
                 f'  Q range: {data.qmin:.4f} to {data.qmax:.4f} {INVERSE_ANGSTROM}',
-                f'  Data points: {len(data.x)}',
+                f'  Data points: {_count_points(data.y)}',
                 f'  Error (dI) column: {"yes" if has_real_data(data.dy) else "no"}',
                 f'  Resolution (dQ) column: {"yes" if has_real_data(data.dx) else "no"}',
             ]
@@ -674,6 +686,103 @@ class IQuana:
         return (
             full_min if qmin is None else float(qmin),
             full_max if qmax is None else float(qmax),
+        )
+
+    # =========================================================================
+    # 2D to 1D: circular, sector and annular averages
+    # =========================================================================
+
+    def _cut_image(self, caller: str) -> averaging.Image:
+        """The fitter's image as the averages read it: its pixels and resolution."""
+        if self._selection is None:
+            raise ValueError(f'{caller}() needs 2D data. Load a 2D detector image first.')
+        return averaging.image_for(self.data, self._selection.excluded(), self._resolution)
+
+    def _cut_limits(self) -> tuple[float | None, float | None]:
+        """The Q limits of set_q_range(), or (None, None) for the whole image."""
+        return self._q_cut() or (None, None)
+
+    def circular_average(self, bins: Any = None, log: bool = False) -> Any:
+        """Average the 2D data over the whole detector: I(Q), a fit-ready ``Data1D``.
+
+        Uses exactly the pixels a 2D fit uses (the file mask, the masks set on
+        this fitter, the Q range of :meth:`set_q_range`) and carries the
+        resolution over: the file's radial width with ``'data'``,
+        ``dq_over_q·|Q|`` per pixel with ``'pinhole'``. The result goes into
+        ``set_data()``, ``MultiFitter.add()``, ``modelfree`` and
+        ``data_ops.subtract()`` as it is.
+
+        For other Q limits or an extra mask on one cut, use
+        ``data_ops.circular_average(fitter.data, qmin=..., mask=...)``.
+
+        Args:
+            bins: The Q grid. None (default) makes bins as wide as the local
+                pixel pitch; an integer, that many equal bins; an array, the
+                edges; a curve (an earlier cut, any ``Data1D``), its grid.
+                Every cut of one image lands on the same grid by default.
+            log: Logarithmic bins; needs an integer *bins*.
+
+        See :func:`iquana.data_ops.circular_average` for the rules.
+        """
+        qmin, qmax = self._cut_limits()
+        image = self._cut_image('circular_average')
+        return averaging.radial_average(image, qmin=qmin, qmax=qmax, bins=bins, log=log)
+
+    def sector_average(
+        self,
+        phi: float | str,
+        half_width: float = 10.0,
+        mirror: bool = True,
+        bins: Any = None,
+        log: bool = False,
+    ) -> Any:
+        """Average the 2D data inside a sector: I(Q) along one direction.
+
+        Same pixels, Q range and resolution as :meth:`circular_average`.
+
+        Args:
+            phi: Centre of the sector in degrees anticlockwise from +Qx, or
+                ``'horizontal'`` (0) or ``'vertical'`` (90).
+            half_width: Half the opening in degrees (default 10, which mixes
+                in 1 % of the perpendicular direction on sin² data).
+            mirror: Also use the sector on the other side of the beam.
+            bins, log: As :meth:`circular_average`.
+
+        See :func:`iquana.data_ops.sector_average` for the rules and the
+        table of what a sector measures on anisotropic data.
+        """
+        qmin, qmax = self._cut_limits()
+        image = self._cut_image('sector_average')
+        return averaging.radial_average(
+            image, sector=(phi, half_width, mirror), qmin=qmin, qmax=qmax, bins=bins, log=log
+        )
+
+    def annular_average(self, qmin: float, qmax: float, bins: int = 36) -> averaging.AnnularAverage:
+        """Average the 2D data inside the ring qmin ≤ |Q| ≤ qmax: I(φ).
+
+        The masks of this fitter apply; its Q range does not, since *qmin*
+        and *qmax* are the ring. Returns an :class:`~iquana.AnnularAverage`;
+        ``ring.fit_sin2()`` measures the anisotropy.
+
+        Args:
+            qmin, qmax: The ring, in 1/Å.
+            bins: Number of angular bins over the full circle (36 = 10°).
+        """
+        return averaging.angular_average(self._cut_image('annular_average'), qmin, qmax, bins)
+
+    def plot_cuts(self, *cuts: Any, log_scale: bool = True, show: bool | None = None) -> Figure:
+        """Draw the regions of *cuts* on the 2D data, next to their curves.
+
+        The answer to "did I cut where I meant to": each sector or ring is
+        outlined on the image in the colour of its curve. Excluded pixels are
+        transparent. See :func:`iquana.data_ops.plot_cuts`.
+        """
+        from .plotting2d import plot_cuts
+
+        if self._selection is None:
+            raise ValueError('plot_cuts() needs 2D data. Load a 2D detector image first.')
+        return plot_cuts(
+            self.data, *cuts, excluded=self._selection.excluded(), log_scale=log_scale, show=show
         )
 
     def set_resolution(

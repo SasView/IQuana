@@ -19,7 +19,7 @@ Example:
     >>> fitter.set_resolution('none')
 
 Everything else (file formats, kernels, deuteration, size polydispersity,
-series, settings records) is documented at https://easyscience.github.io/SincCity/.
+series, settings records) is documented at https://sasview.github.io/SincCity/.
 Use ``iquana.set_verbosity`` rather than ``sinccity.set_verbosity``: IQuana's
 covers the calculator's messages too. ``sinccity_version`` is the installed
 SincCity version, which ``save_analysis`` also records.

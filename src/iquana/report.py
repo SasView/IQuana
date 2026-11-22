@@ -30,6 +30,31 @@ DEFAULT_CORRELATION_THRESHOLD = 0.95
 __all__ = ['FitReport', 'DEFAULT_CORRELATION_THRESHOLD']
 
 
+def parameter_block(entries: list[tuple[str, float, float | None, bool]]) -> dict[str, dict]:
+    """Parameters in the fit engines' shape, from ``(name, value, stderr, fitted)``.
+
+    For results that are not model fits (model-free fits, ``fit_sin2``), so
+    their :class:`FitReport` reads like a model fit's.
+    """
+    from .fitting.bumps_engine import format_uncertainty
+
+    block = {}
+    for name, value, err, fitted in entries:
+        stderr = float(err) if fitted and err is not None else 0.0
+        block[name] = {
+            'value': float(value),
+            'stderr': stderr,
+            'formatted': (
+                format_uncertainty(float(value), stderr)
+                if fitted and math.isfinite(stderr) and stderr > 0
+                else f'{float(value):.6g}' + ('' if fitted else ' (fixed)')
+            ),
+            'fixed': not fitted,
+            'linked_to': None,
+        }
+    return block
+
+
 def json_safe(value: Any) -> Any:
     """Convert *value* into something ``json.dumps(..., allow_nan=False)`` accepts.
 
