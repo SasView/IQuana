@@ -704,6 +704,22 @@ fitter, so the model, bounds, resolution, weighting and Q cut reach every one.
 See the [Series Fitting](series.md) guide for the value sources, ordering,
 start values, flags, repairing a row and saving the series.
 
+### SESANS and SEMSANS Data
+
+Spin-echo SANS data loads from a `.ses` file and fits with the same models and
+calls; reduced SEMSANS visibility ratios go in through `data_ops.sesans()`:
+
+```python
+fitter.load_data('sphere2micron.ses')   # fitter.is_sesans is True
+fitter.set_model('sphere')
+fitter.set_q_range(5000, 30000)         # spin-echo lengths in Å
+fitter.fit()
+```
+
+Resolution and weighting settings do not apply, plots use linear axes, and a
+fit warns when structure is smaller than the transform resolves. See the
+[SESANS and SEMSANS](sesans.md) guide, including which acceptance angle to give.
+
 ### Simultaneous Fitting of Several Datasets
 
 Contrast variation, a temperature or concentration series, and one sample

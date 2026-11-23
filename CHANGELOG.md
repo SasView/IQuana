@@ -6,6 +6,29 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **SESANS and reduced SEMSANS data.** A `.ses` file loads and fits with the
+  usual workflow (`load_data`, `set_model`, `fit`, `plot_results`): sasmodels
+  turns any I(Q) model into ln(P/P₀)/(tλ²) through its Hankel transform. See
+  `docs/sesans.md`.
+  - `data_ops.sesans(spin_echo_length, polarisation=... | depolarisation=...,
+    error=, wavelength=, acceptance=, thickness=)` builds a dataset from
+    arrays, such as reduced SEMSANS visibility ratios.
+  - `IQuana.is_sesans` and `SeriesResult.is_sesans` say which kind of data is
+    held.
+  - `set_q_range()` takes spin-echo lengths for SESANS data, and the range,
+    masks and NaN points are honoured by every engine, `fit_bayesian()`, the
+    plots and the export. sasmodels ignores them for SESANS data; IQuana
+    selects the points itself while the transform keeps the whole grid, so a
+    kept point's curve does not depend on the range.
+  - A fit warns when the curve depends on the transform's integration limit
+    (structure much smaller than the first spin-echo step), and still returns
+    its result.
+  - Linear axes, SESANS labels, a "Transform" line instead of the resolution
+    mode, and SESANS column names in `save_results()`
+    (`spin_echo_length,depolarisation,error,fit,residual`).
+  - `fit_series()` fits SESANS series; a series holds one kind of data.
+  - `notebooks/sesans_fitting.ipynb` and `examples/sesans_example.py`.
+
 - **2D to 1D: circular, sector and annular averages** (roadmap item 3.3):
   - `IQuana.circular_average()`, `sector_average(phi, half_width=10,
     mirror=True)` and `annular_average(qmin, qmax, bins=36)`, using the
@@ -39,6 +62,18 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- `plot_model()`, `plot_results()`, `compare()` and
+  `plot_posterior_predictive()` take `log_scale=None` by default, meaning log
+  axes for I(Q) data (as before) and linear for SESANS data. An explicit
+  `log_scale=True` on SESANS data is refused.
+- A SESANS analysis is saved as schema version 4 (`data.measurement`, and the
+  wavelengths and acceptance of an in-memory dataset). I(Q) analyses stay at
+  version 3, so 0.6 keeps reading them. A SESANS analysis saved by an earlier
+  version loads without its fit result, which ignored the fit range.
+- SESANS data refuses what does not apply to it: a resolution mode other than
+  `'data'`, a weighting other than `'dI'` (on the setters and on loading), a
+  free `background`, a custom `q=` grid, `MultiFitter` and `data_ops`
+  arithmetic.
 - `data_ops` arithmetic refuses a first operand without dQ when the second has
   it, with a message, instead of failing inside sasdata with a `TypeError`.
 - The 1D data summary says "151 (104 with data)" for a curve with NaN rows.

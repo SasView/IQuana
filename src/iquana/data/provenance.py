@@ -26,7 +26,7 @@ from typing import Any
 
 import numpy as np
 
-from .view import is_2d, n_points
+from .view import is_2d, is_sesans, n_points
 
 ARRAY_FIELDS = ('x', 'y', 'dy', 'dx', 'dxl', 'dxw')
 # 2D data: the file arrays only. The user's pixel selection is fitter state and
@@ -55,7 +55,9 @@ def fingerprint_arrays(data: Any) -> str:
     name alone, so "no dx" and "dx of zeros" are distinguishable.
 
     2D data hashes its own columns instead; the byte layout for 1D data is
-    unchanged, so fingerprints stored by earlier versions still match.
+    unchanged, so fingerprints stored by earlier versions still match. SESANS
+    data adds the wavelengths and the acceptance angle, which the transform
+    reads: a result must not survive a change of either.
     """
     digest = hashlib.sha256()
     for name in _ARRAY_FIELDS_2D if is_2d(data) else ARRAY_FIELDS:
@@ -73,6 +75,12 @@ def fingerprint_arrays(data: Any) -> str:
     else:
         digest.update(b'|')
         digest.update(np.ascontiguousarray(np.asarray(mask), dtype=bool).tobytes())
+    if is_sesans(data):
+        from .sesans import acceptance, wavelength
+
+        digest.update(b'sesans|wavelength|')
+        digest.update(np.ascontiguousarray(wavelength(data), dtype=float).tobytes())
+        digest.update(f'|acceptance|{acceptance(data)!r}'.encode())
     return digest.hexdigest()
 
 

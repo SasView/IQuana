@@ -8,7 +8,9 @@
       "Bash(gh project item-list:*)",
       "Bash(gh project field-list:*)",
       "Bash(git check-ignore *)",
-      "Bash(wc -l src/iquana/*.py)"
+      "Bash(wc -l src/iquana/*.py)",
+      "Bash(python -c \"import reportlab, markdown; print\\(reportlab.Version\\)\")",
+      "Read(//c/Windows/Fonts/**)"
     ]
   }
 }

@@ -157,6 +157,8 @@ NO = _glyph('✗', 'no')
 ARROW = _glyph('→', '->')
 #: Unit of Q.
 INVERSE_ANGSTROM = _glyph('Å⁻¹', '1/Ang')
+#: Unit of a length (a spin-echo length, a wavelength).
+ANGSTROM = _glyph('Å', 'Ang')
 #: Goodness-of-fit symbol.
 CHI_SQUARED = _glyph('χ²', 'chi^2')
 #: Separates an estimate from its uncertainty.

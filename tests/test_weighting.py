@@ -24,7 +24,7 @@ from iquana.data.weighting import (
     validate_weighting,
 )
 from iquana.fitting.bumps_engine import _build_bumps_problem
-from iquana.persistence import SCHEMA_VERSION
+from iquana.persistence import SANS_SCHEMA_VERSION
 from iquana.plotting import plot_fit
 from iquana.results import FitArtifacts, FitResultContract
 
@@ -290,12 +290,13 @@ def test_dream_guard_raises_before_sampling(noise_free, monkeypatch):
 
 def test_sesans_refuses_non_di_weighting_at_fit_time(noisy):
     fitter = make_fitter(noisy, mode='sqrt')
+    fitter.set_resolution('data')
     sesans = copy.deepcopy(fitter._evaluation_data(warn=False))
     sesans.isSesans = True
     with pytest.raises(ValueError, match='SESANS data is always weighted'):
-        fitter._check_fit_uncertainties('bumps', sesans)
+        fitter._check_measurement_setup(sesans)
     fitter.set_weighting('dI')
-    fitter._check_fit_uncertainties('bumps', sesans)  # unaffected
+    fitter._check_measurement_setup(sesans)  # unaffected
 
 
 # =========================================================================
@@ -378,7 +379,7 @@ def test_round_trip_restores_the_mode_and_result(noisy, tmp_path):
     path = save(fitter, tmp_path)
 
     document = json.load(open(path, encoding='utf-8'))
-    assert document['schema']['version'] == SCHEMA_VERSION >= 2  # weighting since 2
+    assert document['schema']['version'] == SANS_SCHEMA_VERSION >= 2  # weighting since 2
     assert document['weighting'] == {'mode': 'abs'}
 
     restored = IQuana.load_analysis(path, data=noisy)

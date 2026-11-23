@@ -31,6 +31,7 @@ from .base import (
     extract_fit_index,
     pd_is_active,
     reduced_chisq,
+    select_fit_points,
     validate_covariance,
 )
 
@@ -217,7 +218,7 @@ def _build_bumps_problem(
     for follower, target in fit_state.linked_params.items():
         setattr(model, follower, getattr(model, target))
 
-    experiment = Experiment(data=data, model=model)
+    experiment = select_fit_points(Experiment(data=data, model=model), data)
     problem = FitProblem(experiment)
     return problem, experiment
 
@@ -447,7 +448,8 @@ def _build_posterior_evaluator(
     as error bars would show, say, bars of exactly 1 under ``'none'``. Both
     are deep-copied so a later change to the fitter cannot alter the plot.
     """
-    calculator = DirectModel(deepcopy(data), kernel)
+    frozen = deepcopy(data)
+    calculator = select_fit_points(DirectModel(frozen, kernel), frozen)
     posterior_data = deepcopy(data if plot_data is None else plot_data)
     base_pars = {name: info['value'] for name, info in fit_state.params.items()}
 

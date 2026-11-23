@@ -4,16 +4,62 @@
 2D data (``Data2D``) keeps them in ``data``/``err_data`` and
 ``qx_data``/``qy_data``. Generic code asks these functions instead of reading
 the attributes, so the 1D/2D distinction lives in one place.
+
+SESANS data is a ``Data1D`` too, but its ``x`` is a spin-echo length and its
+``y`` a normalised depolarisation. :func:`is_sesans` tells it apart and
+:func:`axis_text` gives the words and axes that describe each kind.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+
+from ..console import ANGSTROM, INVERSE_ANGSTROM
 
 
 def is_2d(data: Any) -> bool:
     """True for 2D detector data (sasdata or sasmodels ``Data2D``)."""
     return data is not None and getattr(data, 'qx_data', None) is not None
+
+
+def is_sesans(data: Any) -> bool:
+    """True for SESANS (or reduced SEMSANS) data: depolarisation against spin-echo length."""
+    return bool(getattr(data, 'isSesans', False))
+
+
+@dataclass(frozen=True, slots=True)
+class AxisText:
+    """How a kind of data is named in messages, plots and reports."""
+
+    #: 'SANS' or 'SESANS', for titles.
+    measurement: str
+    #: What the x values are, for messages ('Q range for fitting').
+    x_name: str
+    #: The unit of x in console text (plain ASCII where the console needs it).
+    x_unit: str
+    #: Plot axis titles.
+    x_title: str
+    y_title: str
+    #: Whether the data reads best on log axes.
+    log_axes: bool
+
+
+SANS_AXES = AxisText('SANS', 'Q', INVERSE_ANGSTROM, 'Q (Å⁻¹)', 'I(Q)', True)
+#: Linear axes: the depolarisation is negative, so a log axis cannot show it.
+SESANS_AXES = AxisText(
+    'SESANS',
+    'Spin-echo length',
+    ANGSTROM,
+    'Spin-echo length (Å)',
+    'ln(P/P₀)/(tλ²) (Å⁻² cm⁻¹)',
+    False,
+)
+
+
+def axis_text(data: Any) -> AxisText:
+    """The words and axes for *data*; I(Q) when there is no data."""
+    return SESANS_AXES if is_sesans(data) else SANS_AXES
 
 
 def intensity(data: Any) -> np.ndarray:

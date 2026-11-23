@@ -39,7 +39,8 @@ from . import __version__
 from .console import OK, logger
 from .data.provenance import ARRAY_FIELDS, DataSource, fingerprint_arrays
 from .data.resolution import ResolutionSetting
-from .data.view import intensity, is_2d, uncertainty
+from .data.sesans import acceptance, build_sesans, wavelength
+from .data.view import intensity, is_2d, is_sesans, uncertainty
 from .fileio import atomic_write
 from .report import json_safe
 from .results import FitArtifacts, FitResultContract, PosteriorDigest
@@ -60,8 +61,19 @@ SERIES_FORMAT = 'iquana-series'
 #   so an analysis saved from set_data() reloads without data=. Version 1 and 2
 #   documents have no arrays and still need data= for such a dataset, as does
 #   an in-memory 2D dataset, whose arrays are not embedded.
-SCHEMA_VERSION = 3
-SUPPORTED_VERSIONS = (1, 2, 3)
+# Version 4 (0.7.0) is written for SESANS data only: 'data.measurement' =
+#   'sesans', and for an in-memory dataset its wavelengths ('data.arrays.
+#   wavelength') and acceptance angle ('data.acceptance'). An I(Q) analysis is
+#   still written as version 3, so IQuana 0.6 keeps reading it. A SESANS one must
+#   not be read by a version that ignores its fit range, and is not.
+SCHEMA_VERSION = 4
+SUPPORTED_VERSIONS = (1, 2, 3, 4)
+#: The version an analysis of I(Q) data is written as.
+SANS_SCHEMA_VERSION = 3
+#: Why a SESANS result from before version 4 is not restored.
+_UNRANGED_SESANS = (
+    'it was fitted by an IQuana that ignored the fit range and mask of SESANS data; fit again'
+)
 
 #: The weighting every pre-weighting (0.4, schema 1) fit was made under.
 DEFAULT_WEIGHTING = {'mode': 'dI'}
@@ -454,8 +466,12 @@ def _data_section(
         'array_fingerprint_now': fingerprint_arrays(data),
         'processes': list(source.processes),
     }
+    if is_sesans(data):
+        section['measurement'] = 'sesans'
     if source.kind == 'memory' and include_arrays and not is_2d(data):
         section['arrays'] = _arrays_section(data)
+        if is_sesans(data):
+            section['acceptance'] = acceptance(data)
     if source.kind == 'file':
         section['path_absolute'] = source.path
         section['path_relative'] = (
@@ -474,11 +490,14 @@ def _arrays_section(data: Any) -> dict[str, Any]:
 
     Non-finite values are written as the strings ``float()`` reads back
     (``'nan'``, ``'inf'``, ``'-inf'``): a masked point may carry a NaN, and
-    the reloaded arrays must reproduce the fingerprint exactly.
+    the reloaded arrays must reproduce the fingerprint exactly. SESANS data
+    adds its wavelengths.
     """
+    columns = {name: getattr(data, name, None) for name in ARRAY_FIELDS}
+    if is_sesans(data):
+        columns['wavelength'] = wavelength(data)
     section: dict[str, Any] = {}
-    for name in ARRAY_FIELDS:
-        values = getattr(data, name, None)
+    for name, values in columns.items():
         section[name] = (
             None
             if values is None
@@ -511,7 +530,7 @@ def _validate_arrays(arrays: Any) -> dict[str, np.ndarray | None]:
     """
     _require(isinstance(arrays, dict), 'data.arrays', 'must be a mapping')
     columns: dict[str, np.ndarray | None] = {}
-    for name in ARRAY_FIELDS:
+    for name in (*ARRAY_FIELDS, 'wavelength'):
         path = f'data.arrays.{name}'
         values = arrays.get(name)
         if name in ('x', 'y'):
@@ -553,7 +572,19 @@ def _dataset_from_section(section: dict[str, Any]) -> Any:
     from sasdata.dataloader.data_info import Data1D, Process
 
     columns = _validate_arrays(section.get('arrays'))
-    data = Data1D(x=columns['x'], y=columns['y'], dx=columns['dx'], dy=columns['dy'])
+    if section.get('measurement') == 'sesans':
+        angle = section.get('acceptance')
+        _require(columns['wavelength'] is not None, 'data.arrays.wavelength', 'is required')
+        _require(
+            isinstance(angle, (int, float)) and not isinstance(angle, bool),
+            'data.acceptance',
+            'must be a number',
+        )
+        data = build_sesans(
+            columns['x'], columns['y'], columns['dy'], columns['wavelength'], angle, columns['dx']
+        )
+    else:
+        data = Data1D(x=columns['x'], y=columns['y'], dx=columns['dx'], dy=columns['dy'])
     data.dxl, data.dxw = columns['dxl'], columns['dxw']
     mask = section['arrays'].get('mask')
     if mask is not None:
@@ -583,7 +614,7 @@ def build_analysis_dict(
     document: dict[str, Any] = {
         'schema': {
             'format': SCHEMA_FORMAT,
-            'version': SCHEMA_VERSION,
+            'version': SCHEMA_VERSION if is_sesans(fitter.data) else SANS_SCHEMA_VERSION,
             'written_by': __version__,
             'sasmodels': _package_version('sasmodels'),
             'sinccity': _package_version('sinccity'),
@@ -1063,6 +1094,28 @@ def _rebuild_residuals(
     return (y - curve) / sigma
 
 
+def _check_measurement(document: dict[str, Any], fitter: Any) -> dict[str, Any]:
+    """Refuse data of the other kind for a version 4 analysis; drop an older SESANS result.
+
+    Only version 4 records the kind. An older analysis whose data turns out to
+    be SESANS was fitted by an IQuana that ignored its fit range and mask, so
+    its configuration loads and its result does not.
+    """
+    section = document.get('data')
+    version = document['schema']['version']
+    if isinstance(section, dict) and version >= 4:
+        saved = section.get('measurement') == 'sesans'
+        if saved != fitter.is_sesans:
+            names = {True: 'SESANS', False: 'I(Q)'}
+            raise AnalysisFileError(
+                f'Analysis file: the analysis was saved with {names[saved]} data, but the '
+                f'data loaded for it is {names[fitter.is_sesans]} data.'
+            )
+    if fitter.is_sesans and version < 4 and document.get('result') is not None:
+        return {**document, 'result': None, 'result_omitted': _UNRANGED_SESANS}
+    return document
+
+
 def read_analysis(
     fitter_cls: type,
     filename: str,
@@ -1120,6 +1173,7 @@ def fitter_from_document(
             f'Analysis file: the analysis was saved with {saved_dimension}D data, but the '
             f'data loaded for it is {2 if fitter.is_2d else 1}D.'
         )
+    document = _check_measurement(document, fitter)
 
     restore_configuration(fitter, document, allow_custom_models=allow_custom_models)
 

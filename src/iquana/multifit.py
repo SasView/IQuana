@@ -448,7 +448,7 @@ class MultiFitter:
             # Copied at ingestion: a joint analysis holding a reference to a
             # caller's array would silently change meaning when that array did.
             fitter.set_data(copy.deepcopy(data))
-        _reject_2d(name, fitter)
+        _reject_unsupported_data(name, fitter)
         if model is not None:
             fitter.set_model(model, platform=platform)
 
@@ -493,7 +493,7 @@ class MultiFitter:
             raise ValueError(f"Cannot add '{name}': the fitter has no data loaded.")
         if fitter.kernel is None:
             raise ValueError(f"Cannot add '{name}': the fitter has no model set.")
-        _reject_2d(name, fitter)
+        _reject_unsupported_data(name, fitter)
         mode = fitter.get_weighting()['mode']
         if mode != 'dI':
             raise ValueError(
@@ -2282,8 +2282,13 @@ class MultiFitter:
 # =========================================================================
 
 
-def _reject_2d(name: str, fitter: IQuana) -> None:
-    """Refuse 2D data before it is added: simultaneous 2D fits are not supported yet."""
+def _reject_unsupported_data(name: str, fitter: IQuana) -> None:
+    """Refuse 2D and SESANS data before it is added: neither is supported in joint fits yet."""
+    if fitter.is_sesans:
+        raise ValueError(
+            f"Cannot add '{name}': SESANS data is not supported by MultiFitter in this "
+            'version. Fit it on its own with IQuana.'
+        )
     if fitter.is_2d:
         raise TypeError(
             f"Cannot add '{name}': MultiFitter supports 1D data only. Fit 2D datasets "

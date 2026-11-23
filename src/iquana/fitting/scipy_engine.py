@@ -14,6 +14,7 @@ from .base import (
     normalize_message,
     pd_is_active,
     reduced_chisq,
+    select_fit_points,
     validate_covariance,
 )
 
@@ -71,7 +72,7 @@ def fit_scipy(
     x0 = np.array(x0_list)
     bounds_lower = np.array(bounds_lower_list)
     bounds_upper = np.array(bounds_upper_list)
-    calculator = DirectModel(data, kernel)
+    calculator = select_fit_points(DirectModel(data, kernel), data)
     # sasmodels evaluates the theory only at the fitted points (inside
     # [qmin, qmax], unmasked); compare against the matching data subset.
     y_fit = np.asarray(calculator.Iq)

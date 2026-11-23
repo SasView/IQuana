@@ -18,6 +18,7 @@ import pytest
 from iquana import IQuana
 from iquana.data.provenance import fingerprint_arrays
 from iquana.persistence import (
+    SANS_SCHEMA_VERSION,
     SCHEMA_FORMAT,
     SCHEMA_VERSION,
     AnalysisFileError,
@@ -1292,7 +1293,7 @@ def test_schema_header_identifies_the_writer(fitter, tmp_path):
     _, path = round_trip(fitter, tmp_path)
     schema = json.load(open(path, encoding='utf-8'))['schema']
     assert schema['format'] == SCHEMA_FORMAT
-    assert schema['version'] == SCHEMA_VERSION
+    assert schema['version'] == SANS_SCHEMA_VERSION  # I(Q) data stays at version 3
     assert schema['written_by']
 
 

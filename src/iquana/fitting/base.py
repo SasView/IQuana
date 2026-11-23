@@ -4,6 +4,8 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from ..data.loader import get_fit_index
+from ..data.view import is_sesans
 from ..results import FitResultContract, ParameterStateSnapshot
 
 #: Absolute floor for the on-bound proximity test. Also what makes a parameter fitted to
@@ -101,6 +103,46 @@ def validate_covariance(cov: Any, labels: Sequence[str]) -> np.ndarray:
     if np.isinf(matrix).any():
         raise ValueError('Covariance matrix contains infinite entries.')
     return matrix
+
+
+class _SelectedTransform:
+    """sasmodels' SESANS transform, built on the full grid, reporting the selected points."""
+
+    def __init__(self, full: Any, keep: np.ndarray):
+        self._full, self._keep = full, keep
+        self.q_calc = full.q_calc
+
+    def apply(self, Iq: np.ndarray) -> np.ndarray:  # noqa: N803 - sasmodels' name
+        return self._full.apply(Iq)[self._keep]
+
+
+def select_fit_points(calculator: Any, data: Any) -> Any:
+    """Make a sasmodels calculator or ``Experiment`` built on *data* fit only the selected points.
+
+    For SESANS data sasmodels ignores the fit range and the mask: its fit index
+    is every point. This narrows the observations to ``get_fit_index(data)``
+    (inside the range, unmasked, not NaN) while the transform keeps the grid it
+    was built on, so the curve at a kept point does not depend on the range. A
+    trimmed copy of the data would change that grid, and with it the curve.
+
+    Afterwards the calculator looks to IQuana like an I(Q) one with a range:
+    ``index`` is the boolean selection, ``Iq``/``dIq`` and the curve have one
+    entry per selected point. Call it before the first evaluation. Anything
+    other than SESANS data is returned untouched.
+
+    This sets four attributes on a sasmodels object from outside; it is the only
+    place that does, and the tests pin it against a full-grid evaluation.
+    """
+    if not is_sesans(data):
+        return calculator
+    keep = get_fit_index(data)
+    calculator.resolution = _SelectedTransform(calculator.resolution, keep)
+    calculator.index = keep
+    if calculator.Iq is not None:
+        calculator.Iq = np.asarray(calculator.Iq)[keep]
+    if calculator.dIq is not None:
+        calculator.dIq = np.asarray(calculator.dIq)[keep]
+    return calculator
 
 
 def extract_fit_index(source: Any) -> np.ndarray | None:

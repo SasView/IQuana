@@ -128,8 +128,11 @@ def _settings_rows(fitter: Any) -> list[tuple[str, str]]:
         suffix = (
             '' if (qmin, qmax) == full else f' (restricted from {full[0]:.4g} to {full[1]:.4g})'
         )
-        label = '|Q| range' if fitter.is_2d else 'Q range'
-        rows.append((label, f'{qmin:.4g} to {qmax:.4g} 1/A{suffix}'))
+        if fitter.is_sesans:
+            label, unit = 'Spin-echo length range', 'A'
+        else:
+            label, unit = ('|Q| range' if fitter.is_2d else 'Q range'), '1/A'
+        rows.append((label, f'{qmin:.4g} to {qmax:.4g} {unit}{suffix}'))
     if fitter.is_2d:
         mask = fitter.get_mask()
         rows.append(
@@ -141,6 +144,7 @@ def _settings_rows(fitter: Any) -> list[tuple[str, str]]:
         )
 
     from .data.resolution import ResolutionSetting
+    from .data.sesans import describe_transform
     from .data.weighting import WeightingSetting
 
     # The tables and the plot come from the retained fit, so the settings rows
@@ -159,15 +163,18 @@ def _settings_rows(fitter: Any) -> list[tuple[str, str]]:
         # and could only have been weighted by dI.
         fitted_weighting = contract.weighting or {'mode': 'dI'}
 
-    rows.append(
-        (
-            'Resolution',
-            _setting_text(
-                ResolutionSetting(**fitted_resolution).describe(ascii_only=True),
-                ResolutionSetting(**live_resolution).describe(ascii_only=True),
-            ),
+    if fitter.is_sesans:
+        rows.append(('Transform', describe_transform(fitter.data, ascii_only=True)))
+    else:
+        rows.append(
+            (
+                'Resolution',
+                _setting_text(
+                    ResolutionSetting(**fitted_resolution).describe(ascii_only=True),
+                    ResolutionSetting(**live_resolution).describe(ascii_only=True),
+                ),
+            )
         )
-    )
     rows.append(
         (
             'Weighting',
