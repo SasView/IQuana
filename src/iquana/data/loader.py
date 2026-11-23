@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 from sasdata.dataloader.loader import Loader
 
-from .sesans import check_ses_row_order, prepare_sesans
+from .sesans import prepare_sesans, restore_ses_lengths
 from .view import intensity, is_2d, is_sesans, q_magnitude
 
 
@@ -150,7 +150,7 @@ def load_sans_dataset(filename: str, dataset: int | str = 0) -> LoadedDataset:
     data_list = _load_all(filename)
     index = _select_dataset(data_list, filename, dataset)
     if is_sesans(data_list[index]):
-        check_ses_row_order(filename)
+        restore_ses_lengths(data_list[index], filename)
 
     if len(data_list) > 1:
         listing = ', '.join(f'{i}: {_dataset_label(d, i)}' for i, d in enumerate(data_list))

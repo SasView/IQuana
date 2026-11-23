@@ -16,9 +16,10 @@ make that necessary rather than tidy:
 - sasmodels fails on a single wavelength number, which is what a reactor
   measurement has.
 
-:func:`check_ses_row_order` guards a sasdata reader defect: a ``.ses`` file
-whose rows are not in increasing spin-echo length loads with each wavelength
-attached to the wrong point.
+:func:`restore_ses_lengths` guards two sasdata reader defects: a ``.ses``
+file in units other than Å would load with its spin-echo lengths converted
+twice, and one whose rows are not in increasing spin-echo length with each
+wavelength attached to the wrong point.
 """
 
 import copy
@@ -160,38 +161,76 @@ def describe_transform(data: Any, ascii_only: bool = False) -> str:
     return f'wavelength {text} {unit}, acceptance {acceptance(data):.4g} rad'
 
 
-def check_ses_row_order(filename: str) -> None:
-    """Refuse a ``.ses`` file whose rows are not in increasing spin-echo length.
+def restore_ses_lengths(data: Any, filename: str) -> None:
+    """Put the spin-echo lengths of a ``.ses`` file back on *data* as the file writes them.
 
-    sasdata sorts the spin-echo lengths of such a file but leaves the
-    wavelengths in file order, so every point would carry another point's
-    wavelength, and nothing on the loaded object would show it. A file that is
-    not a ``.ses`` text file is left alone.
+    Guards two sasdata reader defects; *data* is the dataset sasdata loaded
+    from *filename*, before :func:`prepare_sesans`:
+
+    - the reader converts the lengths to Å but keeps the file's unit on them,
+      so a file in nm would be converted a second time, to ten times its
+      lengths. The column and its unit are taken from the file instead, and
+      :func:`prepare_sesans` converts them once;
+    - it sorts the lengths of a file whose rows are not in increasing
+      spin-echo length but leaves the wavelengths in file order, so every point
+      would carry another point's wavelength. Such a file is refused.
+
+    The column is found by its ``SpinEchoLength`` header, as sasdata finds it.
+    A file that is not a ``.ses`` text file is left alone.
+
+    Raises:
+        ValueError: The rows are not in increasing spin-echo length, or the
+            file does not hold the points sasdata loaded from it.
     """
-    try:
-        with open(filename, encoding='utf-8', errors='replace') as handle:
-            lines = handle.read().splitlines()
-    except OSError:
+    read = _read_ses_lengths(filename)
+    if read is None:
         return
-    starts = [i for i, line in enumerate(lines) if line.strip().upper() == 'BEGIN_DATA']
-    if not starts:
-        return
-    lengths = []
-    for line in lines[starts[0] + 2 :]:  # skip the column header
-        fields = line.split()
-        if not fields:
-            continue
-        try:
-            lengths.append(float(fields[0]))
-        except ValueError:
-            break
+    lengths, unit = read
+    name = os.path.basename(filename)
     if np.any(np.diff(lengths) <= 0):
         raise ValueError(
-            f'{os.path.basename(filename)}: the data rows are not in increasing spin-echo '
+            f'{name}: the data rows are not in increasing spin-echo '
             'length. sasdata sorts the lengths but not the wavelengths that belong to '
             'them, so the loaded data would pair points with the wrong wavelength. Sort '
             'the rows of the file by SpinEchoLength first.'
         )
+    if lengths.size != np.size(data.x):
+        raise ValueError(
+            f'{name}: the file has {lengths.size} spin-echo lengths but sasdata loaded '
+            f'{np.size(data.x)} points from it, so their units cannot be checked.'
+        )
+    data.x = lengths
+    data._xunit = unit
+
+
+def _read_ses_lengths(filename: str) -> tuple[np.ndarray, str] | None:
+    """The ``SpinEchoLength`` column of a ``.ses`` file and its unit; None for any other file."""
+    try:
+        with open(filename, encoding='utf-8', errors='replace') as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return None
+    starts = [i for i, line in enumerate(lines) if line.strip().upper() == 'BEGIN_DATA']
+    if not starts:
+        return None
+    params = {}
+    for line in lines[: starts[0]]:
+        terms = line.split()
+        if len(terms) >= 2:
+            params[terms[0]] = ' '.join(terms[1:])
+    rows = [
+        line.split()
+        for line in lines[starts[0] + 1 :]
+        if line.strip() and not line.lstrip().startswith('#')
+    ]
+    if not rows or 'SpinEchoLength' not in rows[0]:
+        return None
+    column = rows[0].index('SpinEchoLength')
+    try:
+        lengths = np.array([float(fields[column]) for fields in rows[1:]])
+    except (IndexError, ValueError):
+        return None
+    return lengths, params.get('SpinEchoLength_unit', '')
 
 
 def build_sesans(
@@ -255,8 +294,8 @@ def sesans(
         polarisation: P/P₀ per point, all positive.
         depolarisation: ln(P/P₀)/(tλ²) per point, in Å⁻² cm⁻¹.
         error: One standard deviation of whichever of the two is given. Without
-            it the bumps engine and ``fit_bayesian()`` refuse to fit; the scipy
-            engine fits unweighted with a warning.
+            it the bumps engine and ``fit_bayesian()`` refuse to fit;
+            ``fit(engine='lmfit')`` fits unweighted with a warning.
         wavelength: Neutron wavelength in Å: one number, or one per point
             (time of flight).
         acceptance: The largest scattering angle the measurement collects, in

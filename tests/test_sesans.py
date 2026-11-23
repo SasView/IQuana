@@ -24,7 +24,13 @@ from scipy import integrate
 
 from iquana import IQuana, MultiFitter, data_ops
 from iquana.data.loader import get_fit_index
-from iquana.data.sesans import acceptance, wavelength
+from iquana.data.sesans import (
+    _LENGTH_UNITS,
+    acceptance,
+    build_sesans,
+    prepare_sesans,
+    wavelength,
+)
 from iquana.fitter import TRANSFORM_WARNING
 from iquana.fitting.base import select_fit_points
 from iquana.persistence import SCHEMA_VERSION, AnalysisFileError, build_analysis_dict
@@ -65,8 +71,12 @@ def edited_ses(path, tmp_path, edit):
     return target
 
 
+def data_start(lines):
+    return next(i for i, line in enumerate(lines) if line.strip() == 'BEGIN_DATA')
+
+
 def reversed_rows(lines):
-    start = next(i for i, line in enumerate(lines) if line.strip() == 'BEGIN_DATA')
+    start = data_start(lines)
     rows = [line for line in lines[start + 2 :] if line.strip()]
     return lines[: start + 2] + rows[::-1]
 
@@ -210,6 +220,95 @@ def test_a_ses_file_loads_in_canonical_form():
 def test_a_file_with_rows_out_of_order_is_refused(tmp_path):
     with pytest.raises(ValueError, match='not in increasing spin-echo length'):
         quiet(IQuana().load_data, edited_ses(ISIS, tmp_path, reversed_rows))
+
+
+def in_unit(unit, factor):
+    """An edit writing the lengths and wavelengths of a .ses file in *unit* (*factor* Å each)."""
+    scaled = ('SpinEchoLength', 'SpinEchoLength_error', 'Wavelength', 'Wavelength_error')
+
+    def edit(lines):
+        start = data_start(lines)
+        header = lines[start + 1].split()
+        columns = [header.index(name) for name in scaled if name in header]
+        head = [
+            f'{line.split()[0]} {unit}'
+            if line.split()[:1] in (['SpinEchoLength_unit'], ['Wavelength_unit'])
+            else line
+            for line in lines[: start + 2]
+        ]
+        rows = []
+        for line in lines[start + 2 :]:
+            fields = line.split()
+            for column in columns:
+                fields[column] = repr(float(fields[column]) / factor)
+            rows.append(' '.join(fields))
+        return head + rows
+
+    return edit
+
+
+def moved_first(name):
+    """An edit moving the column *name* of a .ses file to the front."""
+
+    def edit(lines):
+        start = data_start(lines)
+        header = lines[start + 1].split()
+        order = [header.index(name)] + [i for i in range(len(header)) if header[i] != name]
+        rows = [line.split() for line in lines[start + 1 :] if line.strip()]
+        return lines[: start + 1] + [' '.join(row[i] for i in order) for row in rows]
+
+    return edit
+
+
+@pytest.mark.parametrize('unit, factor', [('nm', 10.0), ('A', 1.0)])
+def test_a_file_in_other_length_units_loads_in_angstrom(tmp_path, unit, factor):
+    reference = _loaded(DELFT)
+    data = _loaded(edited_ses(DELFT, tmp_path, in_unit(unit, factor)))
+    assert data._xunit == 'A' and data.source.wavelength_unit == 'A'
+    np.testing.assert_allclose(data.x, reference.x, rtol=1e-12)
+    np.testing.assert_allclose(data.dx, reference.dx, rtol=1e-12)
+    np.testing.assert_allclose(wavelength(data), wavelength(reference), rtol=1e-12)
+
+
+@pytest.mark.parametrize('path', [DELFT, ISIS], ids=['delft', 'isis'])
+def test_a_file_with_the_columns_in_another_order_loads_the_same(tmp_path, path):
+    # Delft's first column becomes a constant wavelength, which is not increasing.
+    reference = _loaded(path)
+    data = _loaded(edited_ses(path, tmp_path, moved_first('Wavelength')))
+    np.testing.assert_array_equal(data.x, reference.x)
+    np.testing.assert_array_equal(wavelength(data), wavelength(reference))
+    np.testing.assert_array_equal(data.y, reference.y)
+
+
+def test_rows_out_of_order_are_refused_whatever_the_first_column(tmp_path):
+    def increasing_first_column(lines):
+        # Rows reversed, then the first column put back in increasing order: the
+        # spin-echo lengths, in the second column, still run backwards.
+        start = data_start(lines)
+        rows = [line.split() for line in lines[start + 2 :] if line.strip()]
+        first = sorted((row[0] for row in rows), key=float)
+        return lines[: start + 2] + [
+            ' '.join([v, *row[1:]]) for v, row in zip(first, rows, strict=True)
+        ]
+
+    reordered = edited_ses(ISIS, tmp_path, moved_first('Wavelength'))
+    reversed_file = edited_ses(reordered, tmp_path, reversed_rows)
+    with pytest.raises(ValueError, match='not in increasing spin-echo length'):
+        quiet(IQuana().load_data, edited_ses(reversed_file, tmp_path, increasing_first_column))
+
+
+@pytest.mark.parametrize('unit, factor', sorted(_LENGTH_UNITS.items()))
+def test_every_length_unit_is_converted_to_angstrom(unit, factor):
+    x = np.array([400.0, 1600.0, 2800.0])
+    data = build_sesans(x / factor, [-0.01, -0.02, -0.03], [1e-3] * 3, 2.0 / factor, 0.02)
+    data.dx = 0.05 * x / factor
+    data.xaxis('Spin-echo length', unit)
+    data.source.wavelength_unit = unit
+    prepare_sesans(data)
+    np.testing.assert_allclose(data.x, x, rtol=1e-12)
+    np.testing.assert_allclose(data.dx, 0.05 * x, rtol=1e-12)
+    np.testing.assert_allclose(wavelength(data), 2.0, rtol=1e-12)
+    assert data._xunit == 'A' and data.source.wavelength_unit == 'A'
 
 
 def test_an_acceptance_in_degrees_is_converted(tmp_path):
