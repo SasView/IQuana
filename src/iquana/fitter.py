@@ -6,6 +6,7 @@ optimization engines (BUMPS, LMFit) with any model from the SasModels library.
 """
 
 import copy
+import dataclasses
 import difflib
 import functools
 import logging
@@ -24,7 +25,7 @@ from sasmodels.core import load_model
 from sasmodels.direct_model import DirectModel
 
 from . import plotting
-from .console import ARROW, CHI_SQUARED, INVERSE_ANGSTROM, OK, SIGMA, logger
+from .console import ANGSTROM, ARROW, CHI_SQUARED, INVERSE_ANGSTROM, OK, SIGMA, logger
 from .data import averaging
 from .data.loader import (
     get_fit_index,
@@ -42,7 +43,8 @@ from .data.selection import (
     validate_2d,
     zero_uncertainty,
 )
-from .data.view import is_2d, n_points, q_magnitude, uncertainty
+from .data.sesans import describe_transform, with_finer_transform
+from .data.view import axis_text, intensity, is_2d, is_sesans, n_points, q_magnitude, uncertainty
 from .data.weighting import WeightingSetting, apply_weighting, validate_weighting
 from .fitting import (
     BUMPS_METHODS,
@@ -57,7 +59,13 @@ from .fitting import (
     fit_bumps_dream,
     fit_scipy,
 )
-from .fitting.base import at_bound, extract_fit_index, pd_is_active, reduced_chisq
+from .fitting.base import (
+    at_bound,
+    extract_fit_index,
+    pd_is_active,
+    reduced_chisq,
+    select_fit_points,
+)
 from .fitting.theory import (
     build_model_parameters,
     evaluate_theory,
@@ -167,6 +175,10 @@ if not LMFIT_AVAILABLE:
 #: caller that reports these conditions itself (a series fit flags them per
 #: row) can tell them from other warnings without a second copy of the text.
 BOUND_WARNING = 'Fitted parameter(s) at a bound:'
+#: How the warning of IQuana._warn_if_transform_sensitive begins.
+TRANSFORM_WARNING = 'The SESANS curve depends on the integration limit:'
+#: The share of the curve's depth a finer transform may change it by unnoticed.
+TRANSFORM_SENSITIVITY = 0.01
 CONVERGENCE_WARNING = 'The optimizer did not report convergence:'
 
 
@@ -263,6 +275,7 @@ class IQuana:
         """
         loaded = load_sans_dataset(filename, dataset=dataset)
         selection = self._new_selection(loaded.data, None)
+        self._check_measurement_setup(loaded.data)
         self.data = loaded.data
         self._adopt_data(selection)
         # Recorded here because nothing downstream can recover it: the selector
@@ -369,13 +382,20 @@ class IQuana:
         # normalize_sans_data() and set_q_range() set qmin/qmax/mask on the
         # dataset; a shallow copy keeps those off the caller's object, so
         # fitters given the same object keep independent Q ranges and masks.
-        self.data = normalize_sans_data(copy.copy(data))
+        prepared = normalize_sans_data(copy.copy(data))
+        self._check_measurement_setup(prepared)
+        self.data = prepared
         self._adopt_data(None)
 
     @property
     def is_2d(self) -> bool:
         """True when the loaded dataset is 2D detector data."""
         return is_2d(self.data)
+
+    @property
+    def is_sesans(self) -> bool:
+        """True when the loaded dataset is SESANS (or reduced SEMSANS) data."""
+        return is_sesans(self.data)
 
     @staticmethod
     def _new_selection(data: Any, mask_convention: str | None) -> Selection | None:
@@ -415,7 +435,14 @@ class IQuana:
         """The multi-line summary printed when data is loaded or set."""
         data = self.data
         lines = [header]
-        if self._selection is None:
+        if self.is_sesans:
+            text = axis_text(data)
+            lines += [
+                f'  {text.x_name}: {data.qmin:.6g} to {data.qmax:.6g} {text.x_unit}',
+                f'  Data points: {_count_points(data.y)}',
+                f'  Error column: {"yes" if has_real_data(data.dy) else "no"}',
+            ]
+        elif self._selection is None:
             lines += [
                 f'  Q range: {data.qmin:.4f} to {data.qmax:.4f} {INVERSE_ANGSTROM}',
                 f'  Data points: {_count_points(data.y)}',
@@ -439,7 +466,7 @@ class IQuana:
                 f'  Resolution (radial/azimuthal dQ) columns: {"yes" if has_dq else "no"}',
             ]
         lines += [
-            f'  Resolution mode: {self._resolution.describe()}',
+            f'  {self._resolution_line("Resolution mode")}',
             f'  Weighting mode: {self._weighting.describe()}',
         ]
         if self._selection is not None and self.supports_magnetism():
@@ -579,6 +606,11 @@ class IQuana:
         uses: trimming beam-stop spillover at low Q or background-dominated
         high-Q points.
 
+        For SESANS data the limits are spin-echo lengths in Å, not Q: the
+        range selects the points by their spin-echo length. The transform is
+        still computed on the whole grid, so the curve at a kept point does
+        not depend on the range.
+
         Args:
             qmin: Lower Q limit in Å⁻¹. If omitted, the current lower limit
                 is reset to the full data range.
@@ -612,10 +644,12 @@ class IQuana:
 
         index = self._fit_index()
         n_points = int(index.sum())
+        text = axis_text(self.data)
         if n_points == 0:
             self.data.qmin, self.data.qmax = previous
             raise ValueError(
-                f'No data points in Q range [{new_qmin:g}, {new_qmax:g}]. Range unchanged.'
+                f'No data points in {text.x_name} range [{new_qmin:g}, {new_qmax:g}]. '
+                'Range unchanged.'
             )
         self._q_range_request = (
             None
@@ -624,8 +658,8 @@ class IQuana:
         )
 
         logger.info(
-            f'{OK} Q range for fitting: {new_qmin:.6g} to {new_qmax:.6g} {INVERSE_ANGSTROM}\n'
-            f'  Points in fit: {n_points} of {len(index)}'
+            f'{OK} {text.x_name} range for fitting: {new_qmin:.6g} to {new_qmax:.6g} '
+            f'{text.x_unit}\n  Points in fit: {n_points} of {len(index)}'
         )
 
     def reset_q_range(self) -> None:
@@ -641,9 +675,10 @@ class IQuana:
         self.data.qmin, self.data.qmax = self._full_q_range
         self._q_range_request = None
         n_points = int(self._fit_index().sum())
+        text = axis_text(self.data)
         logger.info(
-            f'{OK} Q range reset to {self.data.qmin:.6g} to {self.data.qmax:.6g} '
-            f'{INVERSE_ANGSTROM}\n  Points in fit: {n_points}'
+            f'{OK} {text.x_name} range reset to {self.data.qmin:.6g} to {self.data.qmax:.6g} '
+            f'{text.x_unit}\n  Points in fit: {n_points}'
         )
 
     def get_q_range(self) -> tuple[float, float] | None:
@@ -853,9 +888,10 @@ class IQuana:
 
         Raises:
             ValueError: If the mode is unknown, an argument does not belong to
-                the mode, a required argument is missing, or a width is
+                the mode, a required argument is missing, a width is
                 non-finite, negative or degenerate (a pinhole or slit length of
-                zero). Every check runs before any state is touched, so a
+                zero), or the mode is not ``'data'`` while SESANS data is
+                loaded. Every check runs before any state is touched, so a
                 rejected call leaves the fitter exactly as it was.
 
         Note:
@@ -876,6 +912,7 @@ class IQuana:
                 "Resolution mode 'slit' is a 1D geometry and does not apply to the "
                 "loaded 2D data. Use 'data', 'none' or 'pinhole'."
             )
+        self._check_measurement_setup(resolution=setting)
         self._resolution = setting
         logger.info(f'{OK} Resolution: {self._resolution.describe()}')
 
@@ -942,10 +979,13 @@ class IQuana:
                 to ``'dI'``.
 
         Raises:
-            ValueError: If the mode is not one of the four. A rejected call
-                leaves the fitter unchanged.
+            ValueError: If the mode is not one of the four, or is not
+                ``'dI'`` while SESANS data is loaded. A rejected call leaves
+                the fitter unchanged.
         """
-        self._weighting = validate_weighting(mode)
+        setting = validate_weighting(mode)
+        self._check_measurement_setup(weighting=setting)
+        self._weighting = setting
         logger.info(f'{OK} Weighting: {self._weighting.describe()}')
 
     def get_weighting(self) -> dict[str, Any]:
@@ -959,6 +999,46 @@ class IQuana:
             affect the fitter.
         """
         return self._weighting.as_dict()
+
+    def _check_measurement_setup(
+        self,
+        data: Any = None,
+        *,
+        resolution: ResolutionSetting | None = None,
+        weighting: WeightingSetting | None = None,
+    ) -> None:
+        """Refuse a resolution or weighting that means nothing for SESANS data.
+
+        The one check for every route by which the two can meet: the two
+        setters (a new setting, the loaded data), the two data entry routes (a
+        new dataset, the settings already chosen, which survive a change of
+        data) and every fit. *data* defaults to the loaded dataset, the
+        settings to the fitter's own. Called before any state changes, so a
+        refused call leaves the fitter as it was.
+        """
+        if not is_sesans(self.data if data is None else data):
+            return
+        if (resolution or self._resolution).mode != 'data':
+            raise ValueError(
+                'Resolution smearing does not apply to SESANS data. The transform uses the '
+                "wavelength and acceptance angle carried by the data. Use set_resolution('data')."
+            )
+        weighting_mode = (weighting or self._weighting).mode
+        if weighting_mode != 'dI':
+            raise ValueError(
+                f"Weighting mode '{weighting_mode}' applies to I(Q) data; SESANS data is always "
+                "weighted by its own uncertainties. Use set_weighting('dI')."
+            )
+
+    def _resolution_line(self, label: str = 'Resolution') -> str:
+        """The resolution as the load summary and the fit log state it.
+
+        SESANS data has no resolution setting; the line names what its
+        transform uses instead.
+        """
+        if self.is_sesans:
+            return f'Transform: {describe_transform(self.data)}'
+        return f'{label}: {self._resolution.describe()}'
 
     def _evaluation_data(self, data: Any = None, *, warn: bool = True) -> Any:
         """Return the dataset copy that sasmodels should be handed.
@@ -1673,6 +1753,7 @@ class IQuana:
             logger.info(f'\n{OK} Fit completed!\n{self.get_fit_report()}')
 
         self._warn_about_bounds(self._fit_contract.on_bounds)
+        self._warn_if_transform_sensitive()
         if self._fit_contract.converged is False:
             warnings.warn(
                 f'{CONVERGENCE_WARNING} {self._fit_contract.message}. '
@@ -1682,6 +1763,42 @@ class IQuana:
             )
 
         return self.fit_result
+
+    def _warn_if_transform_sensitive(self) -> None:
+        """Warn when a SESANS curve depends on how finely the transform is computed.
+
+        sasmodels takes the largest q of its transform from the first step
+        between spin-echo lengths, so structure much smaller than that step is
+        cut off. The fitted curve is computed again with one extra point a
+        quarter into the first step (a fourfold higher limit) and compared at
+        the fitted points. It warns when the curve moves by more than 1 % of
+        its depth, or chi-squared by more than 1. Silence is not proof:
+        scattering beyond both limits goes unnoticed. A warning, so the fit
+        still returns its result and a series records it on the row.
+        """
+        if not self.is_sesans or len(self.data.x) < 2:
+            return
+        evaluation_data = self._evaluation_data(warn=False)
+        curve, index = self._evaluate(evaluation_data)
+        finer, _ = self._evaluate(with_finer_transform(evaluation_data))
+        depth = float(np.max(np.abs(curve))) if curve.size else 0.0
+        if depth == 0:
+            return
+        change = float(np.max(np.abs(finer - curve))) / depth
+        y, sigma = intensity(evaluation_data)[index], uncertainty(evaluation_data)[index]
+        with np.errstate(divide='ignore', invalid='ignore'):
+            delta_chisq = float(np.sum(((y - finer) / sigma) ** 2 - ((y - curve) / sigma) ** 2))
+        if change <= TRANSFORM_SENSITIVITY and not abs(delta_chisq) > 1:
+            return
+        step = float(self.data.x[1] - self.data.x[0])
+        warnings.warn(
+            f'{TRANSFORM_WARNING} a finer first spin-echo step changes it by '
+            f'{100 * change:.2g} % of its depth ({CHI_SQUARED} by {delta_chisq:.3g}). '
+            f'Structure much smaller than the first step ({step:.4g} {ANGSTROM}) is not '
+            'resolved. Treat the fitted values with caution, or measure shorter spin-echo '
+            'lengths.',
+            stacklevel=4,
+        )
 
     def _find_parameters_on_bounds(self) -> list[tuple[str, str]]:
         """Varied parameters whose fitted value sits on one of their bounds.
@@ -1762,7 +1879,12 @@ class IQuana:
                 'No fit result available. Run fit() or fit_bayesian() first; '
                 'plot_model() previews the theory without fitting.'
             )
-        return FitReport.from_contract(self._fit_contract, self.model_name)
+        report = FitReport.from_contract(self._fit_contract, self.model_name)
+        if self.is_sesans:  # no resolution setting applies; say what the transform used
+            report = dataclasses.replace(
+                report, resolution=f'SESANS transform, {describe_transform(self.data)}'
+            )
+        return report
 
     def _compute_component_curves(
         self, canonical_values: dict[str, float] | None = None
@@ -1829,7 +1951,9 @@ class IQuana:
             # Evaluated through the same resolution as the fit: otherwise a
             # slit or custom-pinhole fit would overlay sharp component curves
             # under a smeared total.
-            calculator = DirectModel(evaluation_data, part_kernel)
+            calculator = select_fit_points(
+                DirectModel(evaluation_data, part_kernel), evaluation_data
+            )
 
             # Map fitted values by stripping the component prefix; fold in
             # active PD settings the same way the posterior evaluator does.
@@ -1931,7 +2055,8 @@ class IQuana:
         # Re-evaluating legacy lmfit runtime state: use the same evaluation
         # copy the fit itself used, or the re-plotted/saved curve would be
         # unsmeared while the fit was smeared.
-        calculator = DirectModel(self._evaluation_data(warn=False), self.kernel)
+        evaluation_data = self._evaluation_data(warn=False)
+        calculator = select_fit_points(DirectModel(evaluation_data, self.kernel), evaluation_data)
         par_dict = {name: info['value'] for name, info in self.fit_result['parameters'].items()}
         fit_index = extract_fit_index(calculator)
         resolved_index = resolve_fit_index(fit_index, n_points(self.data))
@@ -2057,9 +2182,7 @@ class IQuana:
         smeared, weighted number, so the reader needs to know what produced it
         first.
         """
-        logger.info(
-            f'Resolution: {self._resolution.describe()}\nWeighting: {self._weighting.describe()}'
-        )
+        logger.info(f'{self._resolution_line()}\nWeighting: {self._weighting.describe()}')
 
     def _check_composite_engine_support(self, engine: str) -> None:
         """Gate composite models to the bumps engine.
@@ -2145,16 +2268,9 @@ class IQuana:
                 will be handed to the engine.
 
         Raises:
-            ValueError: On zero σ under bumps or DREAM, and on SESANS data
-                under any mode but ``'dI'``.
+            ValueError: On zero σ under bumps or DREAM.
         """
         mode = self._weighting.mode
-        if mode != 'dI' and getattr(evaluation_data, 'isSesans', False):
-            raise ValueError(
-                f"Weighting mode '{mode}' applies to I(q) data; SESANS data is "
-                "always weighted by its own uncertainties. Use set_weighting('dI')."
-            )
-
         index = get_fit_index(evaluation_data)
         # apply_weighting zero-fills a missing or empty dI, so dy is always a
         # full column here.
@@ -2171,7 +2287,13 @@ class IQuana:
                 else f'Data has {n_zero} of {n_fit} fitted points with zero intensity '
                 'uncertainty (dI)'
             )
-            if n_zero == n_fit and self._data_source.is_computed_curve():
+            if is_sesans(evaluation_data):
+                # The usual exit, another weighting mode, is refused for SESANS.
+                exits = (
+                    'Provide the errors (error= of data_ops.sesans()), or exclude the '
+                    'points with set_q_range()'
+                )
+            elif n_zero == n_fit and self._data_source.is_computed_curve():
                 exits = (
                     'It is a computed curve (SincCity) with no uncertainties: use '
                     "set_weighting('abs') for equal relative weight across decades, or "
@@ -2214,9 +2336,10 @@ class IQuana:
         """Checks that depend on the data's dimension, run before every fit.
 
         Raises:
-            ValueError: For an empty selection, the 2D beta approximation, or a
+            ValueError: For an empty selection, the 2D beta approximation, a
                 polarisation channel whose magnetisation can reach zero (see
-                :meth:`_check_magnetism`).
+                :meth:`_check_magnetism`), or a SESANS setup that cannot apply
+                (see :meth:`_check_sesans_setup`).
         """
         # Both engines would "fit" an empty selection and report chi-squared = 0.
         if not get_fit_index(evaluation_data).any():
@@ -2224,8 +2347,10 @@ class IQuana:
                 'Every pixel is excluded; reset_mask() or widen set_q_range().'
                 if is_2d(evaluation_data)
                 else 'No data points are selected for the fit: every point is masked, '
-                'invalid or outside the Q range.'
+                f'invalid or outside the {axis_text(evaluation_data).x_name} range.'
             )
+        if is_sesans(evaluation_data):
+            self._check_sesans_setup(evaluation_data)
         snapshot = self._param_manager.snapshot_fit_state()
         if not is_2d(evaluation_data):
             orientation = {
@@ -2249,6 +2374,24 @@ class IQuana:
                 'sasmodels for 2D data. Set it to 0.'
             )
         self._check_magnetism(evaluation_data)
+
+    def _check_sesans_setup(self, data: Any) -> None:
+        """Refuse what a SESANS fit cannot use: the settings, and a free background.
+
+        sasmodels sets ``background`` to zero for SESANS data, so a free one
+        never moves and makes the covariance singular. A parameter linked to
+        follow it gives it an effect, so that case is let through. Shared with
+        :meth:`fit_series`, which runs it once the series' data kind is known.
+        """
+        self._check_measurement_setup(data)
+        snapshot = self._param_manager.snapshot_fit_state()
+        if 'background' in snapshot.varying_params and (
+            'background' not in snapshot.linked_params.values()
+        ):
+            raise ValueError(
+                "'background' is not used for SESANS data: sasmodels sets it to zero. "
+                "Fix it with set_param('background', vary=False)."
+            )
 
     def _check_magnetism(self, evaluation_data: Any) -> None:
         """Refuse or warn about magnetic setups sasmodels evaluates surprisingly.
@@ -2512,7 +2655,7 @@ class IQuana:
         self,
         style: str = 'band',
         n_draws: int = DEFAULT_POSTERIOR_PREDICTIVE_DRAWS,
-        log_scale: bool = True,
+        log_scale: bool | None = None,
         show: bool | None = None,
     ) -> Figure:
         """
@@ -2524,7 +2667,8 @@ class IQuana:
             n_draws: Number of posterior samples to evaluate through the
                 model. Each draw costs one sasmodels evaluation, so large
                 values can be slow (especially with polydispersity).
-            log_scale: Use log axes.
+            log_scale: Use log axes. The default (None) follows the data: log
+                for I(Q), linear for SESANS, where log axes are refused.
             show: Same display convention as plot_results().
 
         Raises:
@@ -2636,6 +2780,11 @@ class IQuana:
             if q is not None:
                 raise ValueError('Give either q (1D) or qx/qy (2D), not both.')
             return theory_data_2d(qx, qy, dq, accuracy=self._resolution.accuracy or 'low')
+        if q is not None and self.is_sesans:
+            raise ValueError(
+                'SESANS data is evaluated on its own spin-echo lengths only: the transform '
+                'needs a wavelength for each point. Leave q out.'
+            )
         if q is not None:
             if self.is_magnetism_enabled():
                 raise ValueError(
@@ -2706,7 +2855,7 @@ class IQuana:
     def plot_model(
         self,
         show_residuals: bool = True,
-        log_scale: bool = True,
+        log_scale: bool | None = None,
         show: bool | None = None,
         show_components: bool = False,
     ) -> Figure:
@@ -2728,7 +2877,8 @@ class IQuana:
 
         Args:
             show_residuals: If True, show residuals in a separate panel.
-            log_scale: If True, use log scale for both axes.
+            log_scale: Use log axes. The default (None) follows the data: log
+                for I(Q), linear for SESANS, where log axes are refused.
             show: Same display convention as plot_results().
             show_components: If True and the model is a '+' mixture, overlay
                 one dashed curve per component.
@@ -2794,7 +2944,7 @@ class IQuana:
         cases: dict[str, dict[str, float]] | None = None,
         q: np.ndarray | None = None,
         dq: float | None = None,
-        log_scale: bool = True,
+        log_scale: bool | None = None,
         show: bool | None = None,
         show_data: bool = True,
         **sweep: Sequence[float],
@@ -2814,7 +2964,8 @@ class IQuana:
             q: Q values to evaluate on. When omitted, the loaded dataset's Q
                 values and resolution are used.
             dq: Relative resolution width ΔQ/Q for the *q* grid.
-            log_scale: If True, use log scale for both axes.
+            log_scale: Use log axes. The default (None) follows the data: log
+                for I(Q), linear for SESANS, where log axes are refused.
             show: Same display convention as plot_results().
             show_data: If True and data is loaded, draw the measured points.
                 With an explicit *q*, the data keeps its own Q grid.
@@ -2868,12 +3019,13 @@ class IQuana:
             model_name=self.model_name,
             log_scale=log_scale,
             show=show,
+            axes=axis_text(target),
         )
 
     def plot_results(
         self,
         show_residuals: bool = True,
-        log_scale: bool = True,
+        log_scale: bool | None = None,
         show: bool | None = None,
         show_components: bool = False,
     ) -> Figure:
@@ -2882,7 +3034,8 @@ class IQuana:
 
         Args:
             show_residuals: If True, show residuals in a separate panel
-            log_scale: If True, use log scale for both axes
+            log_scale: Use log axes. The default (None) follows the data: log
+                for I(Q), linear for SESANS, where log axes are refused.
             show: If True, display the figure via fig.show(); if False, only
                 return it. The default (None) displays the figure except in
                 Jupyter notebooks, where the returned figure is rendered by

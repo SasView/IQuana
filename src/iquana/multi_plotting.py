@@ -18,7 +18,14 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from .plotting import COMPONENT_CURVE_COLORS, error_bars, resolve_show, subset
+from .data.view import SANS_AXES, AxisText
+from .plotting import (
+    COMPONENT_CURVE_COLORS,
+    error_bars,
+    resolve_log_scale,
+    resolve_show,
+    subset,
+)
 
 __all__ = ['DatasetPanel', 'plot_multi']
 
@@ -99,12 +106,13 @@ def plot_multi(
     panels: list[DatasetPanel],
     title: str,
     show_residuals: bool = True,
-    log_scale: bool = True,
+    log_scale: bool | None = None,
     show: bool | None = None,
     preview: bool = False,
     residual_label: str = 'Residuals (σ)',
     overlay: bool = False,
     show_components: bool = False,
+    axes: AxisText = SANS_AXES,
 ) -> go.Figure:
     """Build the figure for a preview or a completed simultaneous fit.
 
@@ -112,7 +120,7 @@ def plot_multi(
         panels: One entry per dataset, in the order they should appear.
         title: Figure title, normally carrying the joint goodness of fit.
         show_residuals: Give each dataset a residual panel beneath its curve.
-        log_scale: Log axes, as for a single fit.
+        log_scale: Log axes, as for a single fit; None follows *axes*.
         show: ``True`` to call ``fig.show()``, ``False`` to only return the
             figure. The default follows the single-fit convention: show, except
             in a notebook where the returned figure is rendered anyway.
@@ -124,6 +132,7 @@ def plot_multi(
         show_components: For a '+' mixture model, overlay one dashed curve per
             component beneath the total. A no-op where no component curves were
             computed.
+        axes: What the panels hold: I(Q) unless every panel is SESANS data.
 
     Raises:
         ValueError: If there is nothing to plot, or a fitted curve does not
@@ -131,6 +140,7 @@ def plot_multi(
     """
     if not panels:
         raise ValueError('Nothing to plot: the analysis has no datasets.')
+    log_scale = resolve_log_scale(log_scale, axes)
 
     for panel in panels:
         expected = int(panel.selection().sum())
@@ -141,10 +151,10 @@ def plot_multi(
             )
 
     figure = (
-        _overlay_figure(panels, log_scale, preview)
+        _overlay_figure(panels, log_scale, preview, axes)
         if overlay
         else _stacked_figure(
-            panels, show_residuals, log_scale, preview, residual_label, show_components
+            panels, show_residuals, log_scale, preview, residual_label, show_components, axes
         )
     )
 
@@ -161,6 +171,7 @@ def _stacked_figure(
     preview: bool,
     residual_label: str,
     show_components: bool,
+    axes: AxisText,
 ) -> go.Figure:
     rows_per_panel = 2 if show_residuals else 1
     rows = len(panels) * rows_per_panel
@@ -195,11 +206,11 @@ def _stacked_figure(
         data_row = position * rows_per_panel + 1
         for trace in _panel_traces(panel, preview, position == 0, show_components):
             figure.add_trace(trace, row=data_row, col=1)
-        figure.update_yaxes(title_text='I(Q)', type=axis_type, row=data_row, col=1)
+        figure.update_yaxes(title_text=axes.y_title, type=axis_type, row=data_row, col=1)
         figure.update_xaxes(type=axis_type, row=data_row, col=1)
 
         if not show_residuals:
-            figure.update_xaxes(title_text='Q (Å⁻¹)', row=data_row, col=1)
+            figure.update_xaxes(title_text=axes.x_title, row=data_row, col=1)
             continue
 
         residual_row = data_row + 1
@@ -224,7 +235,7 @@ def _stacked_figure(
             col=1,
         )
         figure.update_xaxes(
-            title_text='Q (Å⁻¹)',
+            title_text=axes.x_title,
             type=axis_type,
             # Tie the residuals to the curve above them, so zooming one dataset
             # keeps its two panels aligned without dragging the others along.
@@ -309,7 +320,9 @@ def _panel_traces(
     return traces
 
 
-def _overlay_figure(panels: list[DatasetPanel], log_scale: bool, preview: bool) -> go.Figure:
+def _overlay_figure(
+    panels: list[DatasetPanel], log_scale: bool, preview: bool, axes: AxisText
+) -> go.Figure:
     """Every dataset on one pair of axes, colour-coded by dataset."""
     figure = go.Figure()
     for position, panel in enumerate(panels):
@@ -338,7 +351,7 @@ def _overlay_figure(panels: list[DatasetPanel], log_scale: bool, preview: bool) 
             )
         )
     axis_type = 'log' if log_scale else 'linear'
-    figure.update_xaxes(title_text='Q (Å⁻¹)', type=axis_type)
-    figure.update_yaxes(title_text='I(Q)', type=axis_type)
+    figure.update_xaxes(title_text=axes.x_title, type=axis_type)
+    figure.update_yaxes(title_text=axes.y_title, type=axis_type)
     figure.update_layout(height=600)
     return figure

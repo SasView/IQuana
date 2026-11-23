@@ -17,6 +17,7 @@ The main class for SANS data fitting.
         - load_data
         - set_data
         - is_2d
+        - is_sesans
         - mask_ring
         - mask_box
         - mask_invalid
@@ -108,6 +109,7 @@ Returned by `IQuana.fit_series()`: one row per dataset of a series fit. See the
       show_source: true
       members:
         - parameters
+        - is_sesans
         - flagged
         - warnings
         - table
@@ -333,7 +335,8 @@ while displays that need the samples themselves raise instead of inventing them.
 Dataset arithmetic: add, subtract, multiply and divide datasets (or a dataset
 and a scalar) with propagated uncertainties, returning fit-ready `Data1D`
 objects. And the 2D-to-1D averages: circular and sector averages, which return
-fit-ready `Data1D` objects, and the annular average I(φ).
+fit-ready `Data1D` objects, and the annular average I(φ). `sesans()` builds a
+SESANS dataset from arrays (see [SESANS and SEMSANS](sesans.md)).
 
 ::: iquana.data.ops
     options:
@@ -349,6 +352,7 @@ fit-ready `Data1D` objects, and the annular average I(φ).
         - sector_average
         - annular_average
         - plot_cuts
+        - sesans
 
 ## AnnularAverage and AnisotropyFit
 

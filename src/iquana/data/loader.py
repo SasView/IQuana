@@ -6,7 +6,8 @@ from typing import Any
 import numpy as np
 from sasdata.dataloader.loader import Loader
 
-from .view import intensity, is_2d, q_magnitude
+from .sesans import prepare_sesans, restore_ses_lengths
+from .view import intensity, is_2d, is_sesans, q_magnitude
 
 
 def has_real_data(arr) -> bool:
@@ -76,9 +77,13 @@ def normalize_sans_data(data: Any) -> Any:
 
     2D data is returned unchanged: its mask convention is resolved by the
     fitter's :class:`~iquana.data.selection.Selection`, never on the object.
+    SESANS data is first brought to its canonical units and checked (see
+    :func:`~iquana.data.sesans.prepare_sesans`).
     """
     if is_2d(data):
         return data
+    if is_sesans(data):
+        prepare_sesans(data)
     qmin = getattr(data, 'qmin', None)
     qmax = getattr(data, 'qmax', None)
     data.qmin = data.x.min() if qmin is None else qmin
@@ -144,6 +149,8 @@ def load_sans_dataset(filename: str, dataset: int | str = 0) -> LoadedDataset:
     """
     data_list = _load_all(filename)
     index = _select_dataset(data_list, filename, dataset)
+    if is_sesans(data_list[index]):
+        restore_ses_lengths(data_list[index], filename)
 
     if len(data_list) > 1:
         listing = ', '.join(f'{i}: {_dataset_label(d, i)}' for i, d in enumerate(data_list))

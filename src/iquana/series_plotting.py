@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from .console import raised_level
+from .data.view import SANS_AXES, SESANS_AXES
 from .multi_plotting import DatasetPanel, plot_multi
 from .plotting import resolve_show
 
@@ -145,6 +146,7 @@ def plot_fits(series: Any, rows: Sequence[Any], *, show: bool | None = None) -> 
         title=f'{series.model}: {len(panels)} of {len(series)} datasets',
         overlay=True,
         show=show,
+        axes=SESANS_AXES if series.is_sesans else SANS_AXES,
     )
 
 

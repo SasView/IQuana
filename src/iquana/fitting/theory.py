@@ -12,7 +12,13 @@ from ..data.loader import has_real_data, validate_q_grid
 from ..data.selection import ORIGIN_Q
 from ..data.view import intensity, n_points, uncertainty
 from ..results import ParameterStateSnapshot, resolve_fit_index
-from .base import apply_parameter_links, extract_fit_index, pd_is_active, reduced_chisq
+from .base import (
+    apply_parameter_links,
+    extract_fit_index,
+    pd_is_active,
+    reduced_chisq,
+    select_fit_points,
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -107,7 +113,7 @@ def evaluate_theory(data: Any, kernel: Any, pars: dict[str, Any]) -> tuple[np.nd
     Returns the float64 curve and the boolean fit index. The dataset's own
     resolution columns are applied, exactly as during a fit.
     """
-    calculator = DirectModel(data, kernel)
+    calculator = select_fit_points(DirectModel(data, kernel), data)
     curve = np.asarray(calculator(**pars), dtype=float)
     return curve, resolve_fit_index(extract_fit_index(calculator), n_points(data))
 

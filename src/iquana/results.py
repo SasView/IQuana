@@ -5,7 +5,7 @@ import numpy as np
 
 from .data.loader import has_real_data
 from .data.resolution import ResolutionSetting
-from .data.view import intensity, is_2d, n_points, q_magnitude, uncertainty
+from .data.view import axis_text, intensity, is_2d, is_sesans, n_points, q_magnitude, uncertainty
 from .data.weighting import WeightingSetting
 
 MIN_POSTERIOR_PARAMETER_COUNT = 2
@@ -364,6 +364,8 @@ class FitResultContract:
         are exported, so every row carries a fitted intensity and residual.
         For 2D data the rows are the fitted pixels, with ``Qx`` and ``Qy``
         columns (and the file's radial/azimuthal widths when it has them).
+        SESANS data has its own column names: ``spin_echo_length``,
+        ``depolarisation``, ``error``, ``fit`` and ``residual``.
         """
         fitted_curve = self.require_fitted_curve()
         two_d = is_2d(data)
@@ -381,7 +383,9 @@ class FitResultContract:
         dy = sigma[index] if has_dy else np.full(len(q), np.nan)
 
         columns: dict[str, np.ndarray] = {}
-        if two_d:
+        if is_sesans(data):
+            columns['spin_echo_length'] = q
+        elif two_d:
             columns['Qx'] = np.asarray(data.qx_data, dtype=float)[index]
             columns['Qy'] = np.asarray(data.qy_data, dtype=float)[index]
             radial, azimuthal = getattr(data, 'dqx_data', None), getattr(data, 'dqy_data', None)
@@ -392,9 +396,10 @@ class FitResultContract:
             columns['Q'] = q
             if has_real_data(data.dx):
                 columns['dQ'] = np.asarray(data.dx, dtype=float)[index]
-        columns['I_exp'] = y
-        columns['dI_exp'] = dy
-        columns['I_fit'] = np.asarray(fitted_curve)
+        names = _SESANS_COLUMNS if is_sesans(data) else _SANS_COLUMNS
+        columns[names[0]] = y
+        columns[names[1]] = dy
+        columns[names[2]] = np.asarray(fitted_curve)
         _validate_export_lengths(**columns)
 
         # The residuals the fit actually minimized, not a re-derivation. The scipy
@@ -406,14 +411,15 @@ class FitResultContract:
         else:
             with np.errstate(divide='ignore', invalid='ignore'):
                 residuals = (y - fitted_curve) / dy
-        columns['Residuals'] = residuals
+        columns[names[3]] = residuals
         _validate_export_lengths(**columns)
+        text = axis_text(data)
 
         # Explicit encoding: the default is the locale codepage, so on a
         # Windows console an export carrying any non-ASCII text (a model name,
         # a moniker) would fail late, at write time.
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write('# SANS Fit Results\n')
+            f.write(f'# {text.measurement} Fit Results\n')
             f.write(f'# Model: {model_name}\n')
             f.write(f'# Engine: {self.engine}\n')
             f.write(f'# Method: {self.method}\n')
@@ -423,7 +429,8 @@ class FitResultContract:
                 f.write(f'# Resolution mode: {_format_resolution(self.resolution)}\n')
             if two_d:
                 f.write('# Data: 2D\n')
-            f.write(f'# {"|Q|" if two_d else "Q"} range: {q.min():.6g} to {q.max():.6g}\n')
+            range_name = '|Q|' if two_d else text.x_name
+            f.write(f'# {range_name} range: {q.min():.6g} to {q.max():.6g}\n')
             f.write(f'# {"Pixels" if two_d else "Points"} fitted: {len(q)} of {len(index)}\n')
             f.write(f'# Free parameters: {self.n_free}\n')
             f.write(f'# Degrees of freedom: {self.dof}\n')
@@ -465,6 +472,11 @@ class FitResultContract:
             f.write(','.join(columns) + '\n')
             for row in zip(*columns.values(), strict=True):
                 f.write(','.join(f'{value:.6e}' for value in row) + '\n')
+
+
+#: Measured value, its uncertainty, fit and residual: the CSV column names.
+_SANS_COLUMNS = ('I_exp', 'dI_exp', 'I_fit', 'Residuals')
+_SESANS_COLUMNS = ('depolarisation', 'error', 'fit', 'residual')
 
 
 def save_fit_result(

@@ -35,6 +35,10 @@ A 2D image becomes 1D data here as well (see :mod:`iquana.data.averaging`):
 All cuts of one image share one Q grid, so ``subtract(across, along)`` works
 at once.
 
+``sesans(spin_echo_length, polarisation=..., ...)`` builds a SESANS dataset
+from arrays, for example reduced SEMSANS data (see :mod:`iquana.data.sesans`).
+Arithmetic does not apply to SESANS data.
+
 Limitations:
     - Both datasets must share the same Q grid (sasdata requires x-values to
       match within 1% relative tolerance). Interpolation onto a common grid is
@@ -64,6 +68,8 @@ from .averaging import (
 )
 from .loader import has_real_data, load_sans_data, normalize_sans_data
 from .provenance import add_process
+from .sesans import sesans
+from .view import is_sesans
 
 __all__ = [
     'load',
@@ -75,6 +81,7 @@ __all__ = [
     'sector_average',
     'annular_average',
     'plot_cuts',
+    'sesans',
 ]
 
 Operand = Data1D | numbers.Number
@@ -186,6 +193,10 @@ def _validate_operand(obj: Any, position: str, allow_scalar: bool) -> None:
         raise TypeError(
             f'The {position} operand is an annular average, I(phi); arithmetic on annular '
             'averages is not supported yet.'
+        )
+    if is_sesans(obj):
+        raise TypeError(
+            f'The {position} operand is SESANS data; dataset arithmetic applies to I(Q) data only.'
         )
     if not isinstance(obj, Data1D):
         raise TypeError(

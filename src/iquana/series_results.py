@@ -394,6 +394,12 @@ def _estimate_text(row: SeriesRow, name: str) -> str:
 # =========================================================================
 
 
+def _kind_mismatch(sesans: bool) -> str:
+    """Why a dataset of the other kind cannot join a series of *sesans* data."""
+    held, other = ('SESANS', 'I(Q)') if sesans else ('I(Q)', 'SESANS')
+    return f'This is {other} data; the series holds {held} data. Fit it as a series of its own.'
+
+
 class SeriesResult:
     """The outcome of :meth:`IQuana.fit_series`: one row per dataset.
 
@@ -454,6 +460,14 @@ class SeriesResult:
     def parameters(self) -> list[str]:
         """The table's parameter columns: what the template varied."""
         return list(self._parameters)
+
+    @property
+    def is_sesans(self) -> bool | None:
+        """True for a series of SESANS data, False for I(Q), None when no row has data."""
+        for row in self._rows:
+            if not row.failed and row.analysis is not None:
+                return (row.analysis.get('data') or {}).get('measurement') == 'sesans'
+        return None
 
     def __len__(self) -> int:
         return len(self._rows)
@@ -803,6 +817,7 @@ class SeriesResult:
                 f'Fit this dataset again before updating row {target.index} ({reason}).'
             )
         self._check_same_data(target, document)
+        self._check_same_kind(document)
         self._check_same_model(target, document)
         self._warn_if_other_optimizer(target, document['result'])
         repaired = replace(target, analysis=document, error=None, warnings=(), edited=True)
@@ -842,6 +857,13 @@ class SeriesResult:
                 f'The fitter does not hold the data of row {target.index} ({target.label}). '
                 f'Open the row with series.fitter({target.index}), repair it there, and update with that fitter.'
             )
+
+    def _check_same_kind(self, document: dict[str, Any]) -> None:
+        sesans = self.is_sesans
+        if sesans is not None and ((document['data'] or {}).get('measurement') == 'sesans') != (
+            sesans
+        ):
+            raise ValueError(_kind_mismatch(sesans))
 
     def _check_same_model(self, target: SeriesRow, document: dict[str, Any]) -> None:
         def model(config: dict[str, Any]) -> tuple[Any, ...]:

@@ -30,7 +30,14 @@ from .console import MIDDLE_DOT, OK, REDUCED_CHI_SQUARED, logger, raised_level
 from .data.loader import load_sans_dataset
 from .fitter import BOUND_WARNING, CONVERGENCE_WARNING, IQuana
 from .persistence import build_analysis_dict
-from .series_results import TABLE_COLUMNS, SeriesResult, SeriesRow, _finite, _number_text
+from .series_results import (
+    TABLE_COLUMNS,
+    SeriesResult,
+    SeriesRow,
+    _finite,
+    _kind_mismatch,
+    _number_text,
+)
 
 __all__ = ['fit_series']
 
@@ -404,6 +411,12 @@ def fit_series(
     rows: list[SeriesRow] = []
     source, seed = template, None
     q_request = template._q_cut()
+    # One kind of data per series: the template's when it holds data, otherwise
+    # the first dataset's that loads. The SESANS setup is checked as soon as the
+    # kind is known, so a setup mistake costs one row, not the whole run.
+    sesans = None if template.data is None else template.is_sesans
+    if sesans:
+        template._check_sesans_setup(template.data)
     interrupted = False
     with _interrupt_flag() as stop:
         try:
@@ -411,9 +424,15 @@ def fit_series(
                 worker = source._copy_setup()
                 restarted = [] if seed is None else _leave_bounds(worker, template, seed)
                 start_row = None if seed is None else seed.index
-                row = _fit_one(worker, number, item, q_request, start_row, engine, method, kwargs)
+                row = _fit_one(
+                    worker, number, item, q_request, start_row, engine, method, kwargs, sesans
+                )
                 if stop.requested:  # the engine swallowed Ctrl-C: this fit was cut short
                     break
+                if sesans is None and worker.data is not None:
+                    sesans = worker.is_sesans
+                    if sesans:
+                        template._check_sesans_setup(worker.data)
                 if restarted:
                     note = (
                         f'{", ".join(restarted)} started from the template value: row '
@@ -462,8 +481,13 @@ def _fit_one(
     engine: str,
     method: str | None,
     kwargs: dict[str, Any],
+    sesans: bool | None,
 ) -> SeriesRow:
-    """Load, cut, fit and record one dataset. Any exception makes a failed row."""
+    """Load, cut, fit and record one dataset. Any exception makes a failed row.
+
+    *sesans* is the series' kind of data, or None while it is not known yet; a
+    dataset of the other kind fails.
+    """
     analysis, error = None, None
     with raised_level(), warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always', UserWarning)
@@ -479,6 +503,8 @@ def _fit_one(
             try:
                 if worker.is_2d:
                     raise ValueError('2D data is not supported by fit_series() in this version.')
+                if sesans is not None and worker.is_sesans != sesans:
+                    raise ValueError(_kind_mismatch(sesans))
                 if q_request is not None:
                     # Fails, and ends the row, when the cut leaves no points: falling
                     # through to a fit over the full range would look like a success.

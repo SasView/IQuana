@@ -8,7 +8,7 @@ from plotly.subplots import make_subplots
 
 from .console import logger
 from .data.loader import get_fit_index, has_real_data
-from .data.view import is_2d
+from .data.view import AxisText, axis_text, is_2d
 from .results import (
     MIN_POSTERIOR_PARAMETER_COUNT,
     FitResultContract,
@@ -80,6 +80,22 @@ def resolve_show(show: bool | None) -> bool:
     return not _running_in_notebook() if show is None else show
 
 
+def resolve_log_scale(log_scale: bool | None, axes: AxisText) -> bool:
+    """The axis type a plot uses: *log_scale* as given, or the data's own when None.
+
+    SESANS data is negative, so log axes cannot show it and an explicit
+    ``log_scale=True`` is refused rather than drawing an empty plot.
+    """
+    if log_scale is None:
+        return axes.log_axes
+    if log_scale and not axes.log_axes:
+        raise ValueError(
+            f'{axes.measurement} data is drawn on linear axes: its values are negative, '
+            'which a log axis cannot show. Leave log_scale out or pass log_scale=False.'
+        )
+    return bool(log_scale)
+
+
 def format_reduced_chisq(reduced_chisq: float, dof: int, symbol: str = 'χ²') -> str:
     """Format a *reduced* chi-squared for titles and logged summaries.
 
@@ -103,7 +119,7 @@ def plot_fit(
     fit_result: FitResultContract | None,
     model_name: str | None,
     show_residuals: bool = True,
-    log_scale: bool = True,
+    log_scale: bool | None = None,
     show: bool | None = None,
     show_components: bool = False,
     *,
@@ -125,9 +141,13 @@ def plot_fit(
             ``data.dy``, the file's own dI. Defaults to *data*.
         weighting_mode: The weighting the residuals were computed under.
             ``'none'`` labels the residual axis in intensity units.
+        log_scale: Log axes; None follows the data (see :func:`resolve_log_scale`).
     """
     if data is None:
         raise ValueError('No data to plot. Use load_data() first.')
+    axes = axis_text(data)
+    log_scale = resolve_log_scale(log_scale, axes)
+    axis_type = 'log' if log_scale else 'linear'
 
     if is_2d(data):
         from .plotting2d import plot_fit_2d
@@ -171,11 +191,11 @@ def plot_fit(
             )
         )
         fig.update_layout(
-            title='SANS Data',
-            xaxis_title='Q (Å⁻¹)',
-            yaxis_title='I(Q)',
-            xaxis_type='log' if log_scale else 'linear',
-            yaxis_type='log' if log_scale else 'linear',
+            title=f'{axes.measurement} Data',
+            xaxis_title=axes.x_title,
+            yaxis_title=axes.y_title,
+            xaxis_type=axis_type,
+            yaxis_type=axis_type,
             template='plotly_white',
         )
         if resolve_show(show):
@@ -318,20 +338,10 @@ def plot_fit(
                 col=1,
             )
         fig.add_hline(y=0, line_dash='dash', line_color='gray', row=2, col=1)
-        fig.update_xaxes(
-            title_text='Q (Å⁻¹)',
-            type='log' if log_scale else 'linear',
-            row=2,
-            col=1,
-        )
-        fig.update_yaxes(
-            title_text='I(Q)',
-            type='log' if log_scale else 'linear',
-            row=1,
-            col=1,
-        )
+        fig.update_xaxes(title_text=axes.x_title, type=axis_type, row=2, col=1)
+        fig.update_yaxes(title_text=axes.y_title, type=axis_type, row=1, col=1)
         fig.update_yaxes(title_text=residual_title, row=2, col=1)
-        fig.update_xaxes(type='log' if log_scale else 'linear', row=1, col=1)
+        fig.update_xaxes(type=axis_type, row=1, col=1)
     else:
         fig.add_trace(data_trace)
         if excluded_trace is not None:
@@ -339,16 +349,10 @@ def plot_fit(
         fig.add_trace(fit_trace)
         for trace in component_traces:
             fig.add_trace(trace)
-        fig.update_xaxes(
-            title_text='Q (Å⁻¹)',
-            type='log' if log_scale else 'linear',
-        )
-        fig.update_yaxes(
-            title_text='I(Q)',
-            type='log' if log_scale else 'linear',
-        )
+        fig.update_xaxes(title_text=axes.x_title, type=axis_type)
+        fig.update_yaxes(title_text=axes.y_title, type=axis_type)
 
-    title_prefix = PREVIEW_TITLE_PREFIX if fit_result.is_preview else 'SANS Fit'
+    title_prefix = PREVIEW_TITLE_PREFIX if fit_result.is_preview else f'{axes.measurement} Fit'
     fig.update_layout(
         title=(
             f'{title_prefix}: {model_name} '
@@ -369,8 +373,10 @@ def plot_model_comparison(
     curves: dict[str, np.ndarray],
     data=None,
     model_name: str | None = None,
-    log_scale: bool = True,
+    log_scale: bool | None = None,
     show: bool | None = None,
+    *,
+    axes: AxisText | None = None,
 ) -> go.Figure:
     """Overlay several theory curves, optionally over the measured data.
 
@@ -381,9 +387,12 @@ def plot_model_comparison(
             evaluated on their own Q grid, this is a second grid on the same
             axis — the usual "measured points, smooth theory" picture.
         model_name: Model name for the title.
-        log_scale: Use log axes.
+        log_scale: Use log axes; None follows *axes*.
         show: Same display convention as plot_fit.
+        axes: What *x* and the curves are; by default that of *data*.
     """
+    axes = axes or axis_text(data)
+    axis_type = 'log' if resolve_log_scale(log_scale, axes) else 'linear'
     x = np.asarray(x)
     fig = go.Figure()
 
@@ -421,10 +430,10 @@ def plot_model_comparison(
 
     fig.update_layout(
         title=f'Model comparison: {model_name}',
-        xaxis_title='Q (Å⁻¹)',
-        yaxis_title='I(Q)',
-        xaxis_type='log' if log_scale else 'linear',
-        yaxis_type='log' if log_scale else 'linear',
+        xaxis_title=axes.x_title,
+        yaxis_title=axes.y_title,
+        xaxis_type=axis_type,
+        yaxis_type=axis_type,
         template='plotly_white',
         height=600,
         width=900,
@@ -637,7 +646,7 @@ def plot_posterior_predictive(
     style: str = 'band',
     n_draws: int = DEFAULT_POSTERIOR_PREDICTIVE_DRAWS,
     fit_index: Any = None,
-    log_scale: bool = True,
+    log_scale: bool | None = None,
     show: bool | None = None,
 ) -> go.Figure:
     """Posterior predictive check: credible band and/or draws over the data.
@@ -652,11 +661,13 @@ def plot_posterior_predictive(
         n_draws: Number of posterior samples to evaluate. The chain is
             subsampled transparently; evaluation cost scales linearly.
         fit_index: Optional boolean mask of fitted points (None = all points).
-        log_scale: Use log axes.
+        log_scale: Use log axes; None follows the data.
         show: Same display convention as plot_fit.
     """
     if data is None:
         raise ValueError('No data to plot. Use load_data() first.')
+    axes = axis_text(data)
+    axis_type = 'log' if resolve_log_scale(log_scale, axes) else 'linear'
     if style not in ('band', 'draws', 'band+draws'):
         raise ValueError(f"style must be 'band', 'draws', or 'band+draws' (got '{style}').")
 
@@ -747,10 +758,10 @@ def plot_posterior_predictive(
 
     fig.update_layout(
         title='Posterior predictive check',
-        xaxis_title='Q (Å⁻¹)',
-        yaxis_title='I(Q)',
-        xaxis_type='log' if log_scale else 'linear',
-        yaxis_type='log' if log_scale else 'linear',
+        xaxis_title=axes.x_title,
+        yaxis_title=axes.y_title,
+        xaxis_type=axis_type,
+        yaxis_type=axis_type,
         template='plotly_white',
         height=600,
         width=900,
