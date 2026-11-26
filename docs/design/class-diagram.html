@@ -1,0 +1,685 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IQuana class diagram</title><style>
+:root{--bg:#f7f8fa;--ink:#1c2430;--muted:#5b6675;--box:#fff;--line:#3d4856;--sep:#d5dae1;
+--multi:#7a4fbf;--core:#c2410c;--model:#0f766e;--data:#1d6fb8;--fit:#a16207;--res:#be185d;--inv:#4d7c0f;--ext:#475569;--misc:#64748b;}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#12161c;--ink:#e6eaf0;--muted:#9aa5b4;--box:#1b212a;--line:#b4bfcc;--sep:#343d4a;
+--multi:#b79af0;--core:#fb923c;--model:#2dd4bf;--data:#60a5fa;--fit:#facc15;--res:#f472b6;--inv:#a3e635;--ext:#94a3b8;--misc:#94a3b8;}}
+:root[data-theme="dark"]{--bg:#12161c;--ink:#e6eaf0;--muted:#9aa5b4;--box:#1b212a;--line:#b4bfcc;--sep:#343d4a;
+--multi:#b79af0;--core:#fb923c;--model:#2dd4bf;--data:#60a5fa;--fit:#facc15;--res:#f472b6;--inv:#a3e635;--ext:#94a3b8;--misc:#94a3b8;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:24px 16px 8px;max-width:1100px}
+h1{font-size:22px;margin:0 0 6px}
+p{margin:0 0 8px;color:var(--muted);font-size:14px;line-height:1.5}
+.legend{display:flex;flex-wrap:wrap;gap:6px 22px;padding:6px 16px 14px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.legend svg{flex:none}
+.wrap{overflow-x:auto;padding:0 16px 32px}
+.wrap>svg{display:block}
+svg text{font-family:Inter,system-ui,sans-serif;fill:var(--ink)}
+.lane{fill:color-mix(in srgb,var(--c) 6%,transparent);stroke:color-mix(in srgb,var(--c) 45%,transparent);stroke-width:1;stroke-dasharray:5 4}
+.lanet{font-size:13px;font-weight:600;fill:var(--c)}
+.l-multi,.t-multi,.b-multi{--c:var(--multi)}.l-core,.t-core,.b-core{--c:var(--core)}.l-model,.t-model,.b-model{--c:var(--model)}
+.l-data,.t-data,.b-data{--c:var(--data)}.l-fit,.t-fit,.b-fit{--c:var(--fit)}.l-res,.t-res,.b-res{--c:var(--res)}
+.l-inv,.t-inv,.b-inv{--c:var(--inv)}.l-ext,.t-ext,.b-ext{--c:var(--ext)}.l-misc,.t-misc,.b-misc{--c:var(--misc)}
+.bx{fill:var(--box);stroke:var(--c);stroke-width:1.3}
+.hd{fill:color-mix(in srgb,var(--c) 16%,var(--box));stroke:none}
+.sep{stroke:var(--sep);stroke-width:1}
+.nm{font-size:14px;font-weight:700}
+.st{font-size:10.5px;fill:var(--muted);font-style:italic}
+.at,.me,.nt{font-family:"DejaVu Sans Mono",ui-monospace,Menlo,Consolas,monospace;font-size:11.2px}
+.at{fill:var(--ink)}.me{fill:var(--ink)}.nt{fill:var(--muted)}
+.e{fill:none;stroke:var(--line);stroke-width:1.3;stroke-linejoin:round}
+.dep{stroke-dasharray:6 4}
+.el{font-size:11px;fill:var(--muted);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}
+.trifill{fill:var(--box)}
+.lg{stroke:var(--line);stroke-width:1.3;fill:none}
+</style></head><body>
+<header><h1>IQuana class diagram</h1>
+<p>Classes of IQuana 0.6.0 as they are in <code>src/iquana</code>, grouped by module. Member lists are shortened to what a reader needs to find their way; private helper classes and the constraint expression nodes are folded into their owners. Module-level functions that matter to the structure are shown as «functions» boxes.</p></header>
+<div class="legend">
+<span><svg width="54" height="12"><path class="lg" d="M14,6 H52"/><path d="M1,6 L7,2 L13,6 L7,10 Z" fill="var(--line)"/><path class="lg" d="M46,2 L52,6 L46,10"/></svg>owns (composition)</span>
+<span><svg width="54" height="12"><path class="lg" d="M1,6 H52"/><path class="lg" d="M46,2 L52,6 L46,10"/></svg>refers to</span>
+<span><svg width="54" height="12"><path class="lg" stroke-dasharray="6 4" d="M1,6 H52"/><path class="lg" d="M46,2 L52,6 L46,10"/></svg>uses, creates or returns</span>
+<span>«…» stereotype</span><span>0..1, 1, * multiplicity at the owned end</span>
+</div>
+<div class="wrap"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2140 1633" width="2140" height="1633" role="img" aria-label="IQuana class diagram">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="context-stroke" stroke-width="1.4"/></marker>
+<marker id="diamond" viewBox="0 0 14 10" refX="13" refY="5" markerWidth="14" markerHeight="10" orient="auto-start-reverse"><path d="M1,5 L7,1 L13,5 L7,9 Z" fill="context-stroke" stroke="context-stroke"/></marker>
+<marker id="tri" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M1,1 L11,6 L1,11 Z" class="trifill" stroke="context-stroke"/></marker>
+</defs>
+<rect class="lane l-multi" x="18" y="74" width="664" height="1419" rx="10"/>
+<text class="lanet t-multi" x="32" y="96">Simultaneous fitting · multifit, modeling.constraints</text>
+<rect class="lane l-core" x="718" y="74" width="684" height="379" rx="10"/>
+<text class="lanet t-core" x="732" y="96">Single-dataset fitter · fitter</text>
+<rect class="lane l-model" x="718" y="475" width="324" height="560" rx="10"/>
+<text class="lanet t-model" x="732" y="497">Parameters · modeling</text>
+<rect class="lane l-data" x="1078" y="475" width="324" height="610" rx="10"/>
+<text class="lanet t-data" x="1092" y="497">Data handling · data</text>
+<rect class="lane l-fit" x="1438" y="74" width="324" height="619" rx="10"/>
+<text class="lanet t-fit" x="1452" y="96">Engines · fitting</text>
+<rect class="lane l-res" x="1778" y="74" width="324" height="1039" rx="10"/>
+<text class="lanet t-res" x="1792" y="96">Results and reports</text>
+<rect class="lane l-inv" x="718" y="1127" width="684" height="408" rx="10"/>
+<text class="lanet t-inv" x="732" y="1149">P(r) inversion · inversion</text>
+<rect class="lane l-ext" x="1438" y="1127" width="324" height="458" rx="10"/>
+<text class="lanet t-ext" x="1452" y="1149">Scattering from a structure · structure</text>
+<rect class="lane l-misc" x="1778" y="1127" width="324" height="408" rx="10"/>
+<text class="lanet t-misc" x="1792" y="1149">Examples and errors</text>
+<path class="e comp" d="M955.0,431.0 L955.0,521.0" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="963" y="513" text-anchor="start">1</text>
+<path class="e comp" d="M1054.0,431.0 L1054.0,574.9 L1100.0,574.9" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="1062" y="568.9" text-anchor="start">0..1</text>
+<path class="e" d="M1054.0,574.9 L1054.0,749.0 L1100.0,749.0" marker-end="url(#arrow)"/>
+<text class="el" x="1062" y="742.95" text-anchor="start">0..1</text>
+<path class="e" d="M1054.0,749.0 L1054.0,897.2 L1100.0,897.2" marker-end="url(#arrow)"/>
+<text class="el" x="1062" y="891.25" text-anchor="start">1</text>
+<path class="e" d="M1054.0,897.2 L1054.0,1012.3 L1100.0,1012.3" marker-end="url(#arrow)"/>
+<text class="el" x="1062" y="1006.3" text-anchor="start">1</text>
+<path class="e comp" d="M740.0,655.4 L728.0,655.4 L728.0,788.6 L740.0,788.6" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="744" y="782.6" text-anchor="start">1</text>
+<path class="e" d="M728.0,788.6 L728.0,938.6 L740.0,938.6" marker-end="url(#arrow)"/>
+<text class="el" x="744" y="932.6" text-anchor="start">1</text>
+<path class="e dep" d="M1380.0,188.4 L1420.0,188.4 L1420.0,167.5 L1460.0,167.5" marker-end="url(#arrow)"/>
+<text class="el" x="1392" y="181.42000000000002" text-anchor="start">calls</text>
+<path class="e dep" d="M1600.0,255.0 L1600.0,215.0" marker-end="url(#arrow)"/>
+<text class="el" x="1608.0" y="241" text-anchor="start">implement</text>
+<path class="e dep" d="M1740.0,615.0 L1751.0,615.0 L1751.0,332.4 L1740.0,332.4" marker-end="url(#arrow)"/>
+<text class="el" x="1745" y="545" text-anchor="end">input</text>
+<path class="e dep" d="M1600.0,384.0 L1600.0,424.0" marker-end="url(#arrow)"/>
+<text class="el" x="1608.0" y="410" text-anchor="start">return</text>
+<path class="e comp" d="M1284.0,120.0 L1284.0,58.0 L2018.4,58.0 L2018.4,120.0" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="2026.4" y="110" text-anchor="start">0..1  last fit</text>
+<path class="e comp" d="M1740.0,471.5 L1762.0,471.5 L1762.0,294.2 L1800.0,294.2" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="1768" y="288.25" text-anchor="start">1</text>
+<path class="e comp" d="M1940.0,325.0 L1940.0,359.0" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="1948.0" y="350" text-anchor="start">1</text>
+<path class="e comp" d="M1940.0,471.0 L1940.0,505.0" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="1948.0" y="496" text-anchor="start">0..1  after fit_bayesian()</text>
+<path class="e dep" d="M1940.0,676.0 L1940.0,642.0" marker-end="url(#arrow)"/>
+<text class="el" x="1948.0" y="667" text-anchor="start">digest of (saved analyses)</text>
+<path class="e dep" d="M2080.0,867.8 L2102.0,867.8 L2102.0,222.5 L2080.0,222.5" marker-end="url(#arrow)"/>
+<text class="el" x="2096" y="801" text-anchor="end">built from</text>
+<path class="e dep" d="M1940.0,984.0 L1940.0,950.0" marker-end="url(#arrow)"/>
+<text class="el" x="1948.0" y="975" text-anchor="start">renders</text>
+<path class="e comp" d="M520.0,338.0 L520.0,382.0" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="528.0" y="370" text-anchor="start">*  one per dataset</text>
+<path class="e comp" d="M520.0,519.0 L520.0,563.0" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="528.0" y="551" text-anchor="start">1</text>
+<path class="e comp" d="M660.0,403.9 L740.0,403.9" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="732" y="396.92" text-anchor="end">1</text>
+<path class="e comp" d="M380.0,185.4 L350.0,185.4 L350.0,188.5 L320.0,188.5" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="344" y="182.5" text-anchor="end">0..1</text>
+<path class="e" d="M350.0,188.5 L350.0,476.5 L320.0,476.5" marker-end="url(#arrow)"/>
+<text class="el" x="344" y="470.5" text-anchor="end">*</text>
+<path class="e" d="M350.0,476.5 L350.0,601.5 L320.0,601.5" marker-end="url(#arrow)"/>
+<text class="el" x="344" y="595.5" text-anchor="end">*</text>
+<path class="e comp" d="M180.0,257.0 L180.0,287.0" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="188.0" y="278" text-anchor="start">*</text>
+<path class="e comp" d="M180.0,649.0 L180.0,679.0" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="188.0" y="670" text-anchor="start">0..1</text>
+<path class="e" d="M180.0,833.0 L180.0,863.0" marker-end="url(#arrow)"/>
+<text class="el" x="188.0" y="854" text-anchor="start">refs *</text>
+<path class="e comp" d="M660.0,294.4 L674.0,294.4 L674.0,1101.1 L660.0,1101.1" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="667" y="1038" text-anchor="end">0..1  last fit</text>
+<path class="e comp" d="M380.0,1108.0 L350.0,1108.0 L350.0,1104.8 L320.0,1104.8" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="328" y="1098.8" text-anchor="start">*</text>
+<path class="e comp" d="M380.0,1162.8 L350.0,1162.8 L350.0,1259.5 L320.0,1259.5" marker-start="url(#diamond)" marker-end="url(#arrow)"/>
+<text class="el" x="328" y="1253.5" text-anchor="start">*</text>
+<path class="e" d="M520.0,1237.0 L520.0,1197.0" marker-end="url(#arrow)"/>
+<text class="el" x="528.0" y="1225" text-anchor="start">reports</text>
+<path class="e dep" d="M880.0,1302.0 L880.0,1342.0" marker-end="url(#arrow)"/>
+<text class="el" x="888.0" y="1330" text-anchor="start">return</text>
+<path class="e dep" d="M1020.0,1211.7 L1060.0,1211.7 L1060.0,1209.0 L1100.0,1209.0" marker-end="url(#arrow)"/>
+<path class="e dep" d="M1020.0,1263.3 L1082.0,1263.3 L1082.0,1380.5 L1100.0,1380.5" marker-end="url(#arrow)"/>
+<path class="e dep" d="M1600.0,1285.0 L1600.0,1325.0" marker-end="url(#arrow)"/>
+<text class="el" x="1608.0" y="1313" text-anchor="start">creates</text>
+<g class="box b-core">
+<rect class="bx" x="740" y="120" width="640" height="311" rx="6"/>
+<text class="nm" x="1060.0" y="147" text-anchor="middle">IQuana</text>
+<path class="hd" d="M740.5,126.5 a6,6 0 0 1 6,-6 h627 a6,6 0 0 1 6,6 V154 H740.5 Z"/>
+<line class="sep" x1="740" y1="154" x2="1380" y2="154"/>
+<text class="at" x="750.0" y="174" xml:space="preserve">data: Data1D | Data2D</text>
+<text class="at" x="750.0" y="191" xml:space="preserve">kernel: sasmodels KernelModel</text>
+<text class="at" x="750.0" y="208" xml:space="preserve">fit_result: dict</text>
+<line class="sep" x1="740" y1="213" x2="1380" y2="213"/>
+<text class="me" x="750.0" y="233" xml:space="preserve">load_data(filename)</text>
+<text class="me" x="750.0" y="250" xml:space="preserve">set_data(data)</text>
+<text class="me" x="750.0" y="267" xml:space="preserve">set_model(name)</text>
+<text class="me" x="750.0" y="284" xml:space="preserve">set_models(*names)</text>
+<text class="me" x="750.0" y="301" xml:space="preserve">set_param(name, value, min, max, vary)</text>
+<text class="me" x="750.0" y="318" xml:space="preserve">link_params(name, to)</text>
+<text class="me" x="750.0" y="335" xml:space="preserve">set_structure_factor(name)</text>
+<text class="me" x="750.0" y="352" xml:space="preserve">set_pd_param(name, ...)</text>
+<text class="me" x="750.0" y="369" xml:space="preserve">enable_magnetism(...)</text>
+<text class="me" x="750.0" y="386" xml:space="preserve">set_q_range(qmin, qmax)</text>
+<text class="me" x="750.0" y="403" xml:space="preserve">mask_ring() / mask_box()</text>
+<text class="me" x="750.0" y="420" xml:space="preserve">set_resolution(mode)</text>
+<text class="me" x="1070.0" y="233" xml:space="preserve">set_weighting(mode)</text>
+<text class="me" x="1070.0" y="250" xml:space="preserve">fit(engine, method)</text>
+<text class="me" x="1070.0" y="267" xml:space="preserve">fit_bayesian(samples, ...)</text>
+<text class="me" x="1070.0" y="284" xml:space="preserve">calculate() / compare()</text>
+<text class="me" x="1070.0" y="301" xml:space="preserve">plot_model() / plot_results()</text>
+<text class="me" x="1070.0" y="318" xml:space="preserve">plot_posterior_pairs() ...</text>
+<text class="me" x="1070.0" y="335" xml:space="preserve">get_fit_report(): FitReport</text>
+<text class="me" x="1070.0" y="352" xml:space="preserve">get_posterior(): PosteriorSummary</text>
+<text class="me" x="1070.0" y="369" xml:space="preserve">save_results(csv)</text>
+<text class="me" x="1070.0" y="386" xml:space="preserve">save_analysis(json)</text>
+<text class="me" x="1070.0" y="403" xml:space="preserve">load_analysis(json)  «classmethod»</text>
+<text class="me" x="1070.0" y="420" xml:space="preserve">report(html | md): Report</text>
+</g>
+<g class="box b-model">
+<rect class="bx" x="740" y="521" width="280" height="192" rx="6"/>
+<text class="nm" x="880.0" y="548" text-anchor="middle">ParameterManager</text>
+<path class="hd" d="M740.5,527.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V555 H740.5 Z"/>
+<line class="sep" x1="740" y1="555" x2="1020" y2="555"/>
+<text class="at" x="750.0" y="575" xml:space="preserve">params: value, min, max, vary</text>
+<text class="at" x="750.0" y="592" xml:space="preserve">model_name: str</text>
+<line class="sep" x1="740" y1="597" x2="1020" y2="597"/>
+<text class="me" x="750.0" y="617" xml:space="preserve">initialize_from_kernel()</text>
+<text class="me" x="750.0" y="634" xml:space="preserve">set_param() / link_params()</text>
+<text class="me" x="750.0" y="651" xml:space="preserve">register_aliases()</text>
+<text class="me" x="750.0" y="668" xml:space="preserve">snapshot_fit_state()</text>
+<text class="me" x="750.0" y="685" xml:space="preserve">apply_fitted_values()</text>
+<text class="me" x="750.0" y="702" xml:space="preserve">export_config() / import_config()</text>
+</g>
+<g class="box b-model">
+<rect class="bx" x="740" y="739" width="280" height="124" rx="6"/>
+<text class="nm" x="880.0" y="766" text-anchor="middle">PolydispersityManager</text>
+<path class="hd" d="M740.5,745.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V773 H740.5 Z"/>
+<line class="sep" x1="740" y1="773" x2="1020" y2="773"/>
+<text class="at" x="750.0" y="793" xml:space="preserve">params: pd width, n, nsigma, type</text>
+<text class="at" x="750.0" y="810" xml:space="preserve">enabled: bool</text>
+<line class="sep" x1="740" y1="815" x2="1020" y2="815"/>
+<text class="me" x="750.0" y="835" xml:space="preserve">set_param() / get_param()</text>
+<text class="me" x="750.0" y="852" xml:space="preserve">set_enabled()</text>
+</g>
+<g class="box b-model">
+<rect class="bx" x="740" y="889" width="280" height="124" rx="6"/>
+<text class="nm" x="880.0" y="916" text-anchor="middle">StructureFactorManager</text>
+<path class="hd" d="M740.5,895.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V923 H740.5 Z"/>
+<line class="sep" x1="740" y1="923" x2="1020" y2="923"/>
+<text class="at" x="750.0" y="943" xml:space="preserve">name: str | None</text>
+<text class="at" x="750.0" y="960" xml:space="preserve">radius_effective_mode: str</text>
+<line class="sep" x1="740" y1="965" x2="1020" y2="965"/>
+<text class="me" x="750.0" y="985" xml:space="preserve">apply() / remove()</text>
+<text class="me" x="750.0" y="1002" xml:space="preserve">backup_params() / restore_params()</text>
+</g>
+<g class="box b-data">
+<rect class="bx" x="1100" y="521" width="280" height="154" rx="6"/>
+<text class="st" x="1240.0" y="542" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1240.0" y="561" text-anchor="middle">DataSource</text>
+<path class="hd" d="M1100.5,527.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V568 H1100.5 Z"/>
+<line class="sep" x1="1100" y1="568" x2="1380" y2="568"/>
+<text class="at" x="1110.0" y="588" xml:space="preserve">kind: file | memory</text>
+<text class="at" x="1110.0" y="605" xml:space="preserve">path, file_sha256</text>
+<text class="at" x="1110.0" y="622" xml:space="preserve">array_fingerprint: str</text>
+<line class="sep" x1="1100" y1="627" x2="1380" y2="627"/>
+<text class="me" x="1110.0" y="647" xml:space="preserve">from_file() / from_memory()</text>
+<text class="me" x="1110.0" y="664" xml:space="preserve">describe()</text>
+</g>
+<g class="box b-data">
+<rect class="bx" x="1100" y="701" width="280" height="137" rx="6"/>
+<text class="st" x="1240.0" y="722" text-anchor="middle">«dataclass · 2D only»</text>
+<text class="nm" x="1240.0" y="741" text-anchor="middle">Selection</text>
+<path class="hd" d="M1100.5,707.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V748 H1100.5 Z"/>
+<line class="sep" x1="1100" y1="748" x2="1380" y2="748"/>
+<text class="at" x="1110.0" y="768" xml:space="preserve">file_excluded, user_excluded</text>
+<text class="at" x="1110.0" y="785" xml:space="preserve">operations: list[dict]</text>
+<line class="sep" x1="1100" y1="790" x2="1380" y2="790"/>
+<text class="me" x="1110.0" y="810" xml:space="preserve">exclude() / excluded()</text>
+<text class="me" x="1110.0" y="827" xml:space="preserve">to_dict() / restore()</text>
+</g>
+<g class="box b-data">
+<rect class="bx" x="1100" y="864" width="280" height="95" rx="6"/>
+<text class="st" x="1240.0" y="885" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="1240.0" y="904" text-anchor="middle">ResolutionSetting</text>
+<path class="hd" d="M1100.5,870.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V911 H1100.5 Z"/>
+<line class="sep" x1="1100" y1="911" x2="1380" y2="911"/>
+<text class="at" x="1110.0" y="931" xml:space="preserve">mode: data | pinhole | slit | none</text>
+<text class="at" x="1110.0" y="948" xml:space="preserve">dq_over_q, slit_length, ...</text>
+</g>
+<g class="box b-data">
+<rect class="bx" x="1100" y="985" width="280" height="78" rx="6"/>
+<text class="st" x="1240.0" y="1006" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="1240.0" y="1025" text-anchor="middle">WeightingSetting</text>
+<path class="hd" d="M1100.5,991.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1032 H1100.5 Z"/>
+<line class="sep" x1="1100" y1="1032" x2="1380" y2="1032"/>
+<text class="at" x="1110.0" y="1052" xml:space="preserve">mode: dI | sqrt | abs | none</text>
+</g>
+<g class="box b-fit">
+<rect class="bx" x="1460" y="120" width="280" height="95" rx="6"/>
+<text class="st" x="1600.0" y="141" text-anchor="middle">«protocol»</text>
+<text class="nm" x="1600.0" y="160" text-anchor="middle">FittingEngine</text>
+<path class="hd" d="M1460.5,126.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V167 H1460.5 Z"/>
+<line class="sep" x1="1460" y1="167" x2="1740" y2="167"/>
+<text class="me" x="1470.0" y="187" xml:space="preserve">__call__(data, kernel, fit_state,</text>
+<text class="me" x="1470.0" y="204" xml:space="preserve">         method) → EngineFitOutput</text>
+</g>
+<g class="box b-fit">
+<rect class="bx" x="1460" y="255" width="280" height="129" rx="6"/>
+<text class="st" x="1600.0" y="276" text-anchor="middle">«functions»</text>
+<text class="nm" x="1600.0" y="295" text-anchor="middle">fitting engines</text>
+<path class="hd" d="M1460.5,261.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V302 H1460.5 Z"/>
+<line class="sep" x1="1460" y1="302" x2="1740" y2="302"/>
+<text class="nt" x="1470.0" y="322" xml:space="preserve">fit_bumps()        bumps optimisers</text>
+<text class="nt" x="1470.0" y="339" xml:space="preserve">fit_bumps_dream()  DREAM sampler</text>
+<text class="nt" x="1470.0" y="356" xml:space="preserve">fit_scipy()        scipy.optimize</text>
+<text class="nt" x="1470.0" y="373" xml:space="preserve">evaluate_theory()  preview, no fit</text>
+</g>
+<g class="box b-fit">
+<rect class="bx" x="1460" y="424" width="280" height="95" rx="6"/>
+<text class="st" x="1600.0" y="445" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1600.0" y="464" text-anchor="middle">EngineFitOutput</text>
+<path class="hd" d="M1460.5,430.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V471 H1460.5 Z"/>
+<line class="sep" x1="1460" y1="471" x2="1740" y2="471"/>
+<text class="at" x="1470.0" y="491" xml:space="preserve">fitted_values: dict[str, float]</text>
+<text class="at" x="1470.0" y="508" xml:space="preserve">runtime_model: Any</text>
+</g>
+<g class="box b-fit">
+<rect class="bx" x="1460" y="559" width="280" height="112" rx="6"/>
+<text class="st" x="1600.0" y="580" text-anchor="middle">«dataclass · built by ParameterManager»</text>
+<text class="nm" x="1600.0" y="599" text-anchor="middle">ParameterStateSnapshot</text>
+<path class="hd" d="M1460.5,565.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V606 H1460.5 Z"/>
+<line class="sep" x1="1460" y1="606" x2="1740" y2="606"/>
+<text class="at" x="1470.0" y="626" xml:space="preserve">params, varying_params</text>
+<text class="at" x="1470.0" y="643" xml:space="preserve">polydisperse_params</text>
+<text class="at" x="1470.0" y="660" xml:space="preserve">linked_params, components</text>
+</g>
+<g class="box b-res">
+<rect class="bx" x="1800" y="120" width="280" height="205" rx="6"/>
+<text class="st" x="1940.0" y="141" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="160" text-anchor="middle">FitResultContract</text>
+<path class="hd" d="M1800.5,126.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V167 H1800.5 Z"/>
+<line class="sep" x1="1800" y1="167" x2="2080" y2="167"/>
+<text class="at" x="1810.0" y="187" xml:space="preserve">engine, method</text>
+<text class="at" x="1810.0" y="204" xml:space="preserve">chisq, reduced_chisq, dof</text>
+<text class="at" x="1810.0" y="221" xml:space="preserve">parameters: dict</text>
+<text class="at" x="1810.0" y="238" xml:space="preserve">cov, cov_labels, cov_source</text>
+<text class="at" x="1810.0" y="255" xml:space="preserve">converged, on_bounds</text>
+<text class="at" x="1810.0" y="272" xml:space="preserve">fit_context: dict</text>
+<line class="sep" x1="1800" y1="277" x2="2080" y2="277"/>
+<text class="me" x="1810.0" y="297" xml:space="preserve">to_legacy_dict()</text>
+<text class="me" x="1810.0" y="314" xml:space="preserve">save_csv()</text>
+</g>
+<g class="box b-res">
+<rect class="bx" x="1800" y="359" width="280" height="112" rx="6"/>
+<text class="st" x="1940.0" y="380" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="399" text-anchor="middle">FitArtifacts</text>
+<path class="hd" d="M1800.5,365.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V406 H1800.5 Z"/>
+<line class="sep" x1="1800" y1="406" x2="2080" y2="406"/>
+<text class="at" x="1810.0" y="426" xml:space="preserve">fitted_curve, residuals</text>
+<text class="at" x="1810.0" y="443" xml:space="preserve">fit_index</text>
+<text class="at" x="1810.0" y="460" xml:space="preserve">component_curves</text>
+</g>
+<g class="box b-res">
+<rect class="bx" x="1800" y="505" width="280" height="137" rx="6"/>
+<text class="st" x="1940.0" y="526" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="545" text-anchor="middle">PosteriorSummary</text>
+<path class="hd" d="M1800.5,511.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V552 H1800.5 Z"/>
+<line class="sep" x1="1800" y1="552" x2="2080" y2="552"/>
+<text class="at" x="1810.0" y="572" xml:space="preserve">samples, chains, logp</text>
+<text class="at" x="1810.0" y="589" xml:space="preserve">mean, median, std</text>
+<text class="at" x="1810.0" y="606" xml:space="preserve">ci_68, ci_95, diagnostics</text>
+<line class="sep" x1="1800" y1="611" x2="2080" y2="611"/>
+<text class="me" x="1810.0" y="631" xml:space="preserve">save_posterior_csv()</text>
+</g>
+<g class="box b-res">
+<rect class="bx" x="1800" y="676" width="280" height="103" rx="6"/>
+<text class="st" x="1940.0" y="697" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="716" text-anchor="middle">PosteriorDigest</text>
+<path class="hd" d="M1800.5,682.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V723 H1800.5 Z"/>
+<line class="sep" x1="1800" y1="723" x2="2080" y2="723"/>
+<text class="at" x="1810.0" y="743" xml:space="preserve">statistics only, no chain</text>
+<line class="sep" x1="1800" y1="748" x2="2080" y2="748"/>
+<text class="me" x="1810.0" y="768" xml:space="preserve">from_summary()</text>
+</g>
+<g class="box b-res">
+<rect class="bx" x="1800" y="813" width="280" height="137" rx="6"/>
+<text class="st" x="1940.0" y="834" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="853" text-anchor="middle">FitReport</text>
+<path class="hd" d="M1800.5,819.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V860 H1800.5 Z"/>
+<line class="sep" x1="1800" y1="860" x2="2080" y2="860"/>
+<text class="at" x="1810.0" y="880" xml:space="preserve">parameters, chisq, corr</text>
+<line class="sep" x1="1800" y1="885" x2="2080" y2="885"/>
+<text class="me" x="1810.0" y="905" xml:space="preserve">from_contract()</text>
+<text class="me" x="1810.0" y="922" xml:space="preserve">to_markdown() / to_dict()</text>
+<text class="me" x="1810.0" y="939" xml:space="preserve">_repr_html_()</text>
+</g>
+<g class="box b-res">
+<rect class="bx" x="1800" y="984" width="280" height="107" rx="6"/>
+<text class="nm" x="1940.0" y="1011" text-anchor="middle">Report</text>
+<path class="hd" d="M1800.5,990.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1018 H1800.5 Z"/>
+<line class="sep" x1="1800" y1="1018" x2="2080" y2="1018"/>
+<text class="at" x="1810.0" y="1038" xml:space="preserve">assets: dict[str, bytes]</text>
+<line class="sep" x1="1800" y1="1043" x2="2080" y2="1043"/>
+<text class="me" x="1810.0" y="1063" xml:space="preserve">to_html() / to_markdown()</text>
+<text class="me" x="1810.0" y="1080" xml:space="preserve">write(filename)</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="380" y="120" width="280" height="218" rx="6"/>
+<text class="nm" x="520.0" y="147" text-anchor="middle">MultiFitter</text>
+<path class="hd" d="M380.5,126.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V154 H380.5 Z"/>
+<line class="sep" x1="380" y1="154" x2="660" y2="154"/>
+<text class="me" x="390.0" y="174" xml:space="preserve">add(name, data, model)</text>
+<text class="me" x="390.0" y="191" xml:space="preserve">add_fitter(name, fitter)</text>
+<text class="me" x="390.0" y="208" xml:space="preserve">share() / unshare()</text>
+<text class="me" x="390.0" y="225" xml:space="preserve">link_params(target, to)</text>
+<text class="me" x="390.0" y="242" xml:space="preserve">constrain(target, expr)</text>
+<text class="me" x="390.0" y="259" xml:space="preserve">set_param() / describe()</text>
+<text class="me" x="390.0" y="276" xml:space="preserve">fit()</text>
+<text class="me" x="390.0" y="293" xml:space="preserve">plot_model() / plot_results()</text>
+<text class="me" x="390.0" y="310" xml:space="preserve">get_fit_report()</text>
+<text class="me" x="390.0" y="327" xml:space="preserve">save_results(directory)</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="380" y="382" width="280" height="137" rx="6"/>
+<text class="st" x="520.0" y="403" text-anchor="middle">«internal»</text>
+<text class="nm" x="520.0" y="422" text-anchor="middle">_Entry</text>
+<path class="hd" d="M380.5,388.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V429 H380.5 Z"/>
+<line class="sep" x1="380" y1="429" x2="660" y2="429"/>
+<text class="at" x="390.0" y="449" xml:space="preserve">name: str</text>
+<text class="at" x="390.0" y="466" xml:space="preserve">weight: float</text>
+<text class="at" x="390.0" y="483" xml:space="preserve">fitter: IQuana</text>
+<line class="sep" x1="380" y1="488" x2="660" y2="488"/>
+<text class="me" x="390.0" y="508" xml:space="preserve">snapshot() / restore()</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="380" y="563" width="280" height="99" rx="6"/>
+<text class="nm" x="520.0" y="590" text-anchor="middle">DatasetHandle</text>
+<path class="hd" d="M380.5,569.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V597 H380.5 Z"/>
+<line class="sep" x1="380" y1="597" x2="660" y2="597"/>
+<text class="nt" x="390.0" y="617" xml:space="preserve">what fit['name'] returns:</text>
+<text class="nt" x="390.0" y="634" xml:space="preserve">the IQuana setters, routed</text>
+<text class="nt" x="390.0" y="651" xml:space="preserve">through the constraint graph</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="380" y="1060" width="280" height="137" rx="6"/>
+<text class="st" x="520.0" y="1081" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="520.0" y="1100" text-anchor="middle">MultiFitResult</text>
+<path class="hd" d="M380.5,1066.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1107 H380.5 Z"/>
+<line class="sep" x1="380" y1="1107" x2="660" y2="1107"/>
+<text class="at" x="390.0" y="1127" xml:space="preserve">chisq, objective, dof</text>
+<text class="at" x="390.0" y="1144" xml:space="preserve">cov, cov_labels, cov_note</text>
+<text class="at" x="390.0" y="1161" xml:space="preserve">constraints: list[dict]</text>
+<line class="sep" x1="380" y1="1166" x2="660" y2="1166"/>
+<text class="me" x="390.0" y="1186" xml:space="preserve">to_dict()</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="380" y="1237" width="280" height="82" rx="6"/>
+<text class="nm" x="520.0" y="1264" text-anchor="middle">MultiFitReport</text>
+<path class="hd" d="M380.5,1243.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1271 H380.5 Z"/>
+<line class="sep" x1="380" y1="1271" x2="660" y2="1271"/>
+<text class="me" x="390.0" y="1291" xml:space="preserve">to_markdown() / to_dict()</text>
+<text class="me" x="390.0" y="1308" xml:space="preserve">_repr_html_()</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="380" y="1359" width="280" height="112" rx="6"/>
+<text class="st" x="520.0" y="1380" text-anchor="middle">«functions + dataclasses»</text>
+<text class="nm" x="520.0" y="1399" text-anchor="middle">fitting.multi_bumps</text>
+<path class="hd" d="M380.5,1365.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1406 H380.5 Z"/>
+<line class="sep" x1="380" y1="1406" x2="660" y2="1406"/>
+<text class="nt" x="390.0" y="1426" xml:space="preserve">run_multi_bumps()</text>
+<text class="nt" x="390.0" y="1443" xml:space="preserve">MultiEntrySpec → MultiFitOutcome</text>
+<text class="nt" x="390.0" y="1460" xml:space="preserve">DatasetOutcome (per dataset)</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="40" y="120" width="280" height="137" rx="6"/>
+<text class="st" x="180.0" y="141" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="180.0" y="160" text-anchor="middle">CompiledGraph</text>
+<path class="hd" d="M40.5,126.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V167 H40.5 Z"/>
+<line class="sep" x1="40" y1="167" x2="320" y2="167"/>
+<text class="at" x="50.0" y="187" xml:space="preserve">free_roots, derived_order</text>
+<text class="at" x="50.0" y="204" xml:space="preserve">ranges</text>
+<line class="sep" x1="40" y1="209" x2="320" y2="209"/>
+<text class="me" x="50.0" y="229" xml:space="preserve">resolve() / gradients()</text>
+<text class="me" x="50.0" y="246" xml:space="preserve">start_vector()</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="40" y="287" width="280" height="112" rx="6"/>
+<text class="st" x="180.0" y="308" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="180.0" y="327" text-anchor="middle">ParameterClass</text>
+<path class="hd" d="M40.5,293.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V334 H40.5 Z"/>
+<line class="sep" x1="40" y1="334" x2="320" y2="334"/>
+<text class="at" x="50.0" y="354" xml:space="preserve">members: tuple[ParameterRef]</text>
+<text class="at" x="50.0" y="371" xml:space="preserve">kind: free|shared|derived|fixed</text>
+<text class="at" x="50.0" y="388" xml:space="preserve">value, minimum, maximum</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="40" y="429" width="280" height="95" rx="6"/>
+<text class="st" x="180.0" y="450" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="180.0" y="469" text-anchor="middle">ShareGroup</text>
+<path class="hd" d="M40.5,435.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V476 H40.5 Z"/>
+<line class="sep" x1="40" y1="476" x2="320" y2="476"/>
+<text class="at" x="50.0" y="496" xml:space="preserve">members: tuple[ParameterRef]</text>
+<text class="at" x="50.0" y="513" xml:space="preserve">source: ParameterRef | None</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="40" y="554" width="280" height="95" rx="6"/>
+<text class="st" x="180.0" y="575" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="180.0" y="594" text-anchor="middle">ConstraintSpec</text>
+<path class="hd" d="M40.5,560.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V601 H40.5 Z"/>
+<line class="sep" x1="40" y1="601" x2="320" y2="601"/>
+<text class="at" x="50.0" y="621" xml:space="preserve">target: ParameterRef</text>
+<text class="at" x="50.0" y="638" xml:space="preserve">kind, text, value</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="40" y="679" width="280" height="154" rx="6"/>
+<text class="st" x="180.0" y="700" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="180.0" y="719" text-anchor="middle">Expression</text>
+<path class="hd" d="M40.5,685.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V726 H40.5 Z"/>
+<line class="sep" x1="40" y1="726" x2="320" y2="726"/>
+<text class="at" x="50.0" y="746" xml:space="preserve">text: str</text>
+<text class="at" x="50.0" y="763" xml:space="preserve">root: Constant | Reference |</text>
+<text class="at" x="50.0" y="780" xml:space="preserve">      Negate | Binary | Power</text>
+<line class="sep" x1="40" y1="785" x2="320" y2="785"/>
+<text class="me" x="50.0" y="805" xml:space="preserve">evaluate() / gradient()</text>
+<text class="me" x="50.0" y="822" xml:space="preserve">interval() / affine()</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="40" y="863" width="280" height="137" rx="6"/>
+<text class="st" x="180.0" y="884" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="180.0" y="903" text-anchor="middle">ParameterRef</text>
+<path class="hd" d="M40.5,869.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V910 H40.5 Z"/>
+<line class="sep" x1="40" y1="910" x2="320" y2="910"/>
+<text class="at" x="50.0" y="930" xml:space="preserve">dataset: str</text>
+<text class="at" x="50.0" y="947" xml:space="preserve">name: str</text>
+<text class="at" x="50.0" y="964" xml:space="preserve">pd: bool</text>
+<line class="sep" x1="40" y1="969" x2="320" y2="969"/>
+<text class="me" x="50.0" y="989" xml:space="preserve">qualified: "h2o.radius"</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="40" y="1060" width="280" height="112" rx="6"/>
+<text class="st" x="180.0" y="1081" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="180.0" y="1100" text-anchor="middle">DatasetResult</text>
+<path class="hd" d="M40.5,1066.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1107 H40.5 Z"/>
+<line class="sep" x1="40" y1="1107" x2="320" y2="1107"/>
+<text class="at" x="50.0" y="1127" xml:space="preserve">n_points, chisq, weight</text>
+<text class="at" x="50.0" y="1144" xml:space="preserve">observed_q, observed_intensity</text>
+<text class="at" x="50.0" y="1161" xml:space="preserve">fitted_curve, residuals</text>
+</g>
+<g class="box b-multi">
+<rect class="bx" x="40" y="1212" width="280" height="95" rx="6"/>
+<text class="st" x="180.0" y="1233" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="180.0" y="1252" text-anchor="middle">MultiParameter</text>
+<path class="hd" d="M40.5,1218.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1259 H40.5 Z"/>
+<line class="sep" x1="40" y1="1259" x2="320" y2="1259"/>
+<text class="at" x="50.0" y="1279" xml:space="preserve">qualified, value, stderr</text>
+<text class="at" x="50.0" y="1296" xml:space="preserve">status, root, expression</text>
+</g>
+<g class="box b-inv">
+<rect class="bx" x="740" y="1173" width="280" height="129" rx="6"/>
+<text class="st" x="880.0" y="1194" text-anchor="middle">«functions»</text>
+<text class="nm" x="880.0" y="1213" text-anchor="middle">iquana.inversion</text>
+<path class="hd" d="M740.5,1179.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1220 H740.5 Z"/>
+<line class="sep" x1="740" y1="1220" x2="1020" y2="1220"/>
+<text class="nt" x="750.0" y="1240" xml:space="preserve">invert(data, d_max, ...)</text>
+<text class="nt" x="750.0" y="1257" xml:space="preserve">auto_invert()</text>
+<text class="nt" x="750.0" y="1274" xml:space="preserve">estimate_alpha() / estimate_n_terms()</text>
+<text class="nt" x="750.0" y="1291" xml:space="preserve">explore_dmax()</text>
+</g>
+<g class="box b-inv">
+<rect class="bx" x="740" y="1342" width="280" height="171" rx="6"/>
+<text class="st" x="880.0" y="1363" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="880.0" y="1382" text-anchor="middle">PrResult</text>
+<path class="hd" d="M740.5,1348.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1389 H740.5 Z"/>
+<line class="sep" x1="740" y1="1389" x2="1020" y2="1389"/>
+<text class="at" x="750.0" y="1409" xml:space="preserve">d_max, n_terms, alpha</text>
+<text class="at" x="750.0" y="1426" xml:space="preserve">coefficients, covariance</text>
+<text class="at" x="750.0" y="1443" xml:space="preserve">rg, i0, background</text>
+<line class="sep" x1="740" y1="1448" x2="1020" y2="1448"/>
+<text class="me" x="750.0" y="1468" xml:space="preserve">evaluate_pr() / evaluate_iq()</text>
+<text class="me" x="750.0" y="1485" xml:space="preserve">plot_pr() / plot_fit()</text>
+<text class="me" x="750.0" y="1502" xml:space="preserve">save_csv()</text>
+</g>
+<g class="box b-inv">
+<rect class="bx" x="1100" y="1173" width="280" height="120" rx="6"/>
+<text class="st" x="1240.0" y="1194" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1240.0" y="1213" text-anchor="middle">DmaxScan</text>
+<path class="hd" d="M1100.5,1179.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1220 H1100.5 Z"/>
+<line class="sep" x1="1100" y1="1220" x2="1380" y2="1220"/>
+<text class="at" x="1110.0" y="1240" xml:space="preserve">d_max_values, data_chisq</text>
+<text class="at" x="1110.0" y="1257" xml:space="preserve">rg, i0, oscillations</text>
+<line class="sep" x1="1100" y1="1262" x2="1380" y2="1262"/>
+<text class="me" x="1110.0" y="1282" xml:space="preserve">format_summary() / plot()</text>
+</g>
+<g class="box b-inv">
+<rect class="bx" x="1100" y="1333" width="280" height="95" rx="6"/>
+<text class="st" x="1240.0" y="1354" text-anchor="middle">«frozen dataclasses»</text>
+<text class="nm" x="1240.0" y="1373" text-anchor="middle">AlphaEstimate · NTermsEstimate</text>
+<path class="hd" d="M1100.5,1339.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1380 H1100.5 Z"/>
+<line class="sep" x1="1100" y1="1380" x2="1380" y2="1380"/>
+<text class="at" x="1110.0" y="1400" xml:space="preserve">alpha / n_terms</text>
+<text class="at" x="1110.0" y="1417" xml:space="preserve">message: str</text>
+</g>
+<g class="box b-ext">
+<rect class="bx" x="1460" y="1173" width="280" height="112" rx="6"/>
+<text class="st" x="1600.0" y="1194" text-anchor="middle">«re-exported from sinccity»</text>
+<text class="nm" x="1600.0" y="1213" text-anchor="middle">GenericScatteringCalculator</text>
+<path class="hd" d="M1460.5,1179.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1220 H1460.5 Z"/>
+<line class="sep" x1="1460" y1="1220" x2="1740" y2="1220"/>
+<text class="me" x="1470.0" y="1240" xml:space="preserve">set_params()</text>
+<text class="me" x="1470.0" y="1257" xml:space="preserve">calculate(): ScatteringProfile</text>
+<text class="me" x="1470.0" y="1274" xml:space="preserve">calculate_series()</text>
+</g>
+<g class="box b-ext">
+<rect class="bx" x="1460" y="1325" width="280" height="103" rx="6"/>
+<text class="st" x="1600.0" y="1346" text-anchor="middle">«re-exported from sinccity»</text>
+<text class="nm" x="1600.0" y="1365" text-anchor="middle">ScatteringProfile</text>
+<path class="hd" d="M1460.5,1331.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1372 H1460.5 Z"/>
+<line class="sep" x1="1460" y1="1372" x2="1740" y2="1372"/>
+<text class="me" x="1470.0" y="1392" xml:space="preserve">to_data1d(dI=...)</text>
+<line class="sep" x1="1460" y1="1397" x2="1740" y2="1397"/>
+<text class="nt" x="1470.0" y="1417" xml:space="preserve">accepted by IQuana.set_data()</text>
+</g>
+<g class="box b-ext">
+<rect class="bx" x="1460" y="1468" width="280" height="95" rx="6"/>
+<text class="st" x="1600.0" y="1489" text-anchor="middle">«re-exported from sinccity»</text>
+<text class="nm" x="1600.0" y="1508" text-anchor="middle">Structure</text>
+<path class="hd" d="M1460.5,1474.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1515 H1460.5 Z"/>
+<line class="sep" x1="1460" y1="1515" x2="1740" y2="1515"/>
+<text class="nt" x="1470.0" y="1535" xml:space="preserve">load() · read_pdb() · read_sld()</text>
+<text class="nt" x="1470.0" y="1552" xml:space="preserve">read_vtk() · read_gro()</text>
+</g>
+<g class="box b-misc">
+<rect class="bx" x="1800" y="1173" width="280" height="120" rx="6"/>
+<text class="st" x="1940.0" y="1194" text-anchor="middle">«frozen dataclass · iquana.examples»</text>
+<text class="nm" x="1940.0" y="1213" text-anchor="middle">Example</text>
+<path class="hd" d="M1800.5,1179.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1220 H1800.5 Z"/>
+<line class="sep" x1="1800" y1="1220" x2="2080" y2="1220"/>
+<text class="at" x="1810.0" y="1240" xml:space="preserve">name, filename, model</text>
+<text class="at" x="1810.0" y="1257" xml:space="preserve">params, truth, tags</text>
+<line class="sep" x1="1800" y1="1262" x2="2080" y2="1262"/>
+<text class="nt" x="1810.0" y="1282" xml:space="preserve">load() · load_fitter() · simulate()</text>
+</g>
+<g class="box b-misc">
+<rect class="bx" x="1800" y="1333" width="280" height="180" rx="6"/>
+<text class="st" x="1940.0" y="1354" text-anchor="middle">«all public»</text>
+<text class="nm" x="1940.0" y="1373" text-anchor="middle">Exceptions</text>
+<path class="hd" d="M1800.5,1339.5 a6,6 0 0 1 6,-6 h267 a6,6 0 0 1 6,6 V1380 H1800.5 Z"/>
+<line class="sep" x1="1800" y1="1380" x2="2080" y2="1380"/>
+<text class="nt" x="1810.0" y="1400" xml:space="preserve">ValueError</text>
+<text class="nt" x="1810.0" y="1417" xml:space="preserve"> ├ AnalysisFileError</text>
+<text class="nt" x="1810.0" y="1434" xml:space="preserve"> ├ ConstraintError</text>
+<text class="nt" x="1810.0" y="1451" xml:space="preserve"> │   └ ExpressionError</text>
+<text class="nt" x="1810.0" y="1468" xml:space="preserve"> └ InsufficientDataError</text>
+<text class="nt" x="1810.0" y="1485" xml:space="preserve">RuntimeError</text>
+<text class="nt" x="1810.0" y="1502" xml:space="preserve"> └ PrEstimationError</text>
+</g>
+<text class="nm" x="1060.0" y="147" text-anchor="middle">IQuana</text>
+<text class="nm" x="880.0" y="548" text-anchor="middle">ParameterManager</text>
+<text class="nm" x="880.0" y="766" text-anchor="middle">PolydispersityManager</text>
+<text class="nm" x="880.0" y="916" text-anchor="middle">StructureFactorManager</text>
+<text class="st" x="1240.0" y="542" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1240.0" y="561" text-anchor="middle">DataSource</text>
+<text class="st" x="1240.0" y="722" text-anchor="middle">«dataclass · 2D only»</text>
+<text class="nm" x="1240.0" y="741" text-anchor="middle">Selection</text>
+<text class="st" x="1240.0" y="885" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="1240.0" y="904" text-anchor="middle">ResolutionSetting</text>
+<text class="st" x="1240.0" y="1006" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="1240.0" y="1025" text-anchor="middle">WeightingSetting</text>
+<text class="st" x="1600.0" y="141" text-anchor="middle">«protocol»</text>
+<text class="nm" x="1600.0" y="160" text-anchor="middle">FittingEngine</text>
+<text class="st" x="1600.0" y="276" text-anchor="middle">«functions»</text>
+<text class="nm" x="1600.0" y="295" text-anchor="middle">fitting engines</text>
+<text class="st" x="1600.0" y="445" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1600.0" y="464" text-anchor="middle">EngineFitOutput</text>
+<text class="st" x="1600.0" y="580" text-anchor="middle">«dataclass · built by ParameterManager»</text>
+<text class="nm" x="1600.0" y="599" text-anchor="middle">ParameterStateSnapshot</text>
+<text class="st" x="1940.0" y="141" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="160" text-anchor="middle">FitResultContract</text>
+<text class="st" x="1940.0" y="380" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="399" text-anchor="middle">FitArtifacts</text>
+<text class="st" x="1940.0" y="526" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="545" text-anchor="middle">PosteriorSummary</text>
+<text class="st" x="1940.0" y="697" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="716" text-anchor="middle">PosteriorDigest</text>
+<text class="st" x="1940.0" y="834" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1940.0" y="853" text-anchor="middle">FitReport</text>
+<text class="nm" x="1940.0" y="1011" text-anchor="middle">Report</text>
+<text class="nm" x="520.0" y="147" text-anchor="middle">MultiFitter</text>
+<text class="st" x="520.0" y="403" text-anchor="middle">«internal»</text>
+<text class="nm" x="520.0" y="422" text-anchor="middle">_Entry</text>
+<text class="nm" x="520.0" y="590" text-anchor="middle">DatasetHandle</text>
+<text class="st" x="520.0" y="1081" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="520.0" y="1100" text-anchor="middle">MultiFitResult</text>
+<text class="nm" x="520.0" y="1264" text-anchor="middle">MultiFitReport</text>
+<text class="st" x="520.0" y="1380" text-anchor="middle">«functions + dataclasses»</text>
+<text class="nm" x="520.0" y="1399" text-anchor="middle">fitting.multi_bumps</text>
+<text class="st" x="180.0" y="141" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="180.0" y="160" text-anchor="middle">CompiledGraph</text>
+<text class="st" x="180.0" y="308" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="180.0" y="327" text-anchor="middle">ParameterClass</text>
+<text class="st" x="180.0" y="450" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="180.0" y="469" text-anchor="middle">ShareGroup</text>
+<text class="st" x="180.0" y="575" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="180.0" y="594" text-anchor="middle">ConstraintSpec</text>
+<text class="st" x="180.0" y="700" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="180.0" y="719" text-anchor="middle">Expression</text>
+<text class="st" x="180.0" y="884" text-anchor="middle">«frozen dataclass»</text>
+<text class="nm" x="180.0" y="903" text-anchor="middle">ParameterRef</text>
+<text class="st" x="180.0" y="1081" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="180.0" y="1100" text-anchor="middle">DatasetResult</text>
+<text class="st" x="180.0" y="1233" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="180.0" y="1252" text-anchor="middle">MultiParameter</text>
+<text class="st" x="880.0" y="1194" text-anchor="middle">«functions»</text>
+<text class="nm" x="880.0" y="1213" text-anchor="middle">iquana.inversion</text>
+<text class="st" x="880.0" y="1363" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="880.0" y="1382" text-anchor="middle">PrResult</text>
+<text class="st" x="1240.0" y="1194" text-anchor="middle">«dataclass»</text>
+<text class="nm" x="1240.0" y="1213" text-anchor="middle">DmaxScan</text>
+<text class="st" x="1240.0" y="1354" text-anchor="middle">«frozen dataclasses»</text>
+<text class="nm" x="1240.0" y="1373" text-anchor="middle">AlphaEstimate · NTermsEstimate</text>
+<text class="st" x="1600.0" y="1194" text-anchor="middle">«re-exported from sinccity»</text>
+<text class="nm" x="1600.0" y="1213" text-anchor="middle">GenericScatteringCalculator</text>
+<text class="st" x="1600.0" y="1346" text-anchor="middle">«re-exported from sinccity»</text>
+<text class="nm" x="1600.0" y="1365" text-anchor="middle">ScatteringProfile</text>
+<text class="st" x="1600.0" y="1489" text-anchor="middle">«re-exported from sinccity»</text>
+<text class="nm" x="1600.0" y="1508" text-anchor="middle">Structure</text>
+<text class="st" x="1940.0" y="1194" text-anchor="middle">«frozen dataclass · iquana.examples»</text>
+<text class="nm" x="1940.0" y="1213" text-anchor="middle">Example</text>
+<text class="st" x="1940.0" y="1354" text-anchor="middle">«all public»</text>
+<text class="nm" x="1940.0" y="1373" text-anchor="middle">Exceptions</text>
+</svg></div>
+</body></html>
